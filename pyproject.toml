@@ -23,12 +23,13 @@ where = ["backend"]
 include = ["netlog*"]
 
 [tool.pytest.ini_options]
-testpaths = ["backend/tests"]
+testpaths = ["backend/tests", "generator/tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["backend"]
+src = ["backend", "."]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

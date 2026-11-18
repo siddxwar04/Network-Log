@@ -1,0 +1,81 @@
+{
+  "scenario": "link_flap",
+  "seed": 1,
+  "year": 2026,
+  "timezone": "UTC",
+  "start": "2026-03-03T00:00:00Z",
+  "end": "2026-03-03T06:00:00Z",
+  "total_lines": 5000,
+  "incidents": [
+    {
+      "id": "inc-1",
+      "type": "link_flap",
+      "title": "Interface GigabitEthernet0/2 on R1 flapping",
+      "start": "2026-03-03T02:35:20Z",
+      "end": "2026-03-03T02:38:47Z",
+      "root_cause": {
+        "kind": "link_flap",
+        "device": "R1",
+        "entity": "GigabitEthernet0/2"
+      },
+      "devices": [
+        "R1"
+      ],
+      "expected_severity": "high",
+      "facts": {
+        "down_transitions": 12
+      },
+      "notes": "No routing protocol runs on this interface, so nothing else is affected.",
+      "lines": [
+        2083,
+        2084,
+        2085,
+        2086,
+        2091,
+        2092,
+        2094,
+        2095,
+        2099,
+        2100,
+        2101,
+        2102,
+        2112,
+        2113,
+        2114,
+        2115,
+        2122,
+        2123,
+        2125,
+        2126,
+        2133,
+        2134,
+        2135,
+        2136,
+        2139,
+        2140,
+        2141,
+        2142,
+        2143,
+        2145,
+        2146,
+        2147,
+        2152,
+        2153,
+        2155,
+        2156,
+        2162,
+        2163,
+        2165,
+        2166,
+        2173,
+        2174,
+        2178,
+        2182,
+        2186,
+        2187,
+        2189,
+        2190
+      ]
+    }
+  ]
+}

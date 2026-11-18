@@ -1,0 +1,68 @@
+{
+  "scenario": "device_reload",
+  "seed": 1,
+  "year": 2026,
+  "timezone": "UTC",
+  "start": "2026-03-03T00:00:00Z",
+  "end": "2026-03-03T06:00:00Z",
+  "total_lines": 4999,
+  "incidents": [
+    {
+      "id": "inc-1",
+      "type": "device_reload",
+      "title": "SW1 reloaded",
+      "start": "2026-03-03T02:33:23Z",
+      "end": "2026-03-03T02:37:29Z",
+      "root_cause": {
+        "kind": "device_reload",
+        "device": "SW1",
+        "entity": "SW1"
+      },
+      "devices": [
+        "SW1",
+        "R3"
+      ],
+      "expected_severity": "critical",
+      "facts": {
+        "requested_by": "netops",
+        "silent_seconds": 195
+      },
+      "notes": "Requested by a user. SW1 logs nothing while it restarts, its message counter starts again from 1, and its first lines after boot show a clock from 1993.",
+      "lines": [
+        2206,
+        2207,
+        2208,
+        2253,
+        2254,
+        2256,
+        2257,
+        2258,
+        2259,
+        2260,
+        2261,
+        2262,
+        2263,
+        2264,
+        2266,
+        2268,
+        2269,
+        2270,
+        2271,
+        2272,
+        2273,
+        2274,
+        2275,
+        2276,
+        2277,
+        2278,
+        2279,
+        2280,
+        2281,
+        2282,
+        2283,
+        2284,
+        2290
+      ]
+    }
+  ]
+}

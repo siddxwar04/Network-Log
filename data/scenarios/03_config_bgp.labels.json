@@ -1,0 +1,40 @@
+{
+  "scenario": "config_bgp",
+  "seed": 1,
+  "year": 2026,
+  "timezone": "UTC",
+  "start": "2026-03-03T00:00:00Z",
+  "end": "2026-03-03T06:00:00Z",
+  "total_lines": 5002,
+  "incidents": [
+    {
+      "id": "inc-1",
+      "type": "bgp_session_down",
+      "title": "BGP session from R2 to 203.0.113.1 dropped shortly after a config change",
+      "start": "2026-03-03T02:36:27Z",
+      "end": "2026-03-03T02:42:57Z",
+      "root_cause": {
+        "kind": "config_change",
+        "device": "R2",
+        "entity": "jdoe"
+      },
+      "devices": [
+        "R2"
+      ],
+      "expected_severity": "critical",
+      "facts": {
+        "changed_by": "jdoe",
+        "changed_from": "10.10.10.53",
+        "neighbor": "203.0.113.1"
+      },
+      "notes": "The change (for example an access list blocking TCP 179) stopped keepalives, so the hold timer expired. A second change fixed it.",
+      "lines": [
+        2149,
+        2153,
+        2154,
+        2236,
+        2242
+      ]
+    }
+  ]
+}

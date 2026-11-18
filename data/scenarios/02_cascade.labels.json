@@ -1,0 +1,73 @@
+{
+  "scenario": "cascade",
+  "seed": 1,
+  "year": 2026,
+  "timezone": "UTC",
+  "start": "2026-03-03T00:00:00Z",
+  "end": "2026-03-03T06:00:00Z",
+  "total_lines": 5000,
+  "incidents": [
+    {
+      "id": "inc-1",
+      "type": "link_failure",
+      "title": "R1 lost its transit link (GigabitEthernet0/1); OSPF and BGP to R1 dropped on R2, R3 and R4",
+      "start": "2026-03-03T02:46:12Z",
+      "end": "2026-03-03T02:55:59Z",
+      "root_cause": {
+        "kind": "link_failure",
+        "device": "R1",
+        "entity": "GigabitEthernet0/1"
+      },
+      "devices": [
+        "R1",
+        "R2",
+        "R3",
+        "R4"
+      ],
+      "expected_severity": "critical",
+      "facts": {
+        "effects": [
+          "ospf_adjacency_loss",
+          "bgp_session_down"
+        ]
+      },
+      "notes": "Chain: R1 interface down -> OSPF adjacencies lost -> iBGP sessions lost. Only R1 logs the interface going down; the other routers see only the effects.",
+      "lines": [
+        2260,
+        2261,
+        2262,
+        2263,
+        2264,
+        2271,
+        2272,
+        2273,
+        2274,
+        2275,
+        2276,
+        2277,
+        2278,
+        2279,
+        2280,
+        2281,
+        2282,
+        2284,
+        2287,
+        2288,
+        2400,
+        2401,
+        2407,
+        2408,
+        2409,
+        2410,
+        2411,
+        2412,
+        2413,
+        2414,
+        2417,
+        2418,
+        2419,
+        2420
+      ]
+    }
+  ]
+}
