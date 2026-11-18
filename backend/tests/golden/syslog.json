@@ -1,0 +1,178 @@
+[
+  {
+    "name": "rfc3164 without PRI, single-digit day, program with pid",
+    "line": "Mar  3 02:20:11 srv1 sshd[2417]: Failed password for invalid user admin from 203.0.113.9 port 51522 ssh2",
+    "expect": {
+      "timestamp": "2026-03-03T02:20:11Z",
+      "year_assumed": true,
+      "tz_assumed": true,
+      "host": "srv1",
+      "source_type": "syslog_generic",
+      "app": "sshd",
+      "facility": null,
+      "severity": null,
+      "message": "Failed password for invalid user admin from 203.0.113.9 port 51522 ssh2",
+      "entities": {"extra": {"pid": "2417"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "rfc3164 with PRI",
+    "line": "<34>Oct 11 22:14:15 mymachine su: 'su root' failed for lonvick on /dev/pts/8",
+    "expect": {
+      "timestamp": "2026-10-11T22:14:15Z",
+      "host": "mymachine",
+      "app": "su",
+      "facility": 4,
+      "severity": 2,
+      "message": "'su root' failed for lonvick on /dev/pts/8",
+      "entities": {"extra": {}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "rfc3164 two-digit day",
+    "line": "Mar 13 23:59:59 dhcp1 dhcpd[811]: DHCPDISCOVER from 00:11:22:33:44:55 via eth1",
+    "expect": {
+      "timestamp": "2026-03-13T23:59:59Z",
+      "host": "dhcp1",
+      "app": "dhcpd",
+      "message": "DHCPDISCOVER from 00:11:22:33:44:55 via eth1"
+    }
+  },
+  {
+    "name": "rfc3164 with fractional seconds",
+    "line": "Mar  3 02:14:07.123456 host1 app: hello",
+    "expect": {"timestamp": "2026-03-03T02:14:07.123456Z", "host": "host1", "message": "hello"}
+  },
+  {
+    "name": "rfc3164 program without pid, padded message",
+    "line": "Mar  3 03:00:23 srv1 sudo:   bob : TTY=pts/0 ; PWD=/home/bob ; USER=root ; COMMAND=/usr/bin/id",
+    "expect": {
+      "app": "sudo",
+      "message": "bob : TTY=pts/0 ; PWD=/home/bob ; USER=root ; COMMAND=/usr/bin/id"
+    }
+  },
+  {
+    "name": "cisco line as stored by a collector: the counter is not a program name",
+    "line": "Mar  3 02:46:12 R1 89085: Mar  3 02:46:11.699: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down",
+    "expect": {
+      "timestamp": "2026-03-03T02:46:12Z",
+      "host": "R1",
+      "app": null,
+      "message": "89085: Mar  3 02:46:11.699: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down",
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "rfc3164 message with no program tag",
+    "line": "Mar  3 02:14:07 host1 something happened: details follow",
+    "expect": {"app": null, "message": "something happened: details follow"}
+  },
+  {
+    "name": "rfc3164 header with an empty message still has a time and a host",
+    "line": "Mar  3 02:14:07 host1",
+    "expect": {"host": "host1", "app": null, "message": "", "parse_status": "parsed"}
+  },
+  {
+    "name": "rfc5424 with structured data",
+    "line": "<165>1 2026-03-03T22:14:15.003Z mymachine.example.com evntslog 1234 ID47 [exampleSDID@32473 iut=\"3\" eventSource=\"Application\"] An application event",
+    "expect": {
+      "timestamp": "2026-03-03T22:14:15.003000Z",
+      "year_assumed": false,
+      "tz_assumed": false,
+      "host": "mymachine.example.com",
+      "source_type": "syslog_generic",
+      "app": "evntslog",
+      "facility": 20,
+      "severity": 5,
+      "message": "An application event",
+      "entities": {
+        "extra": {
+          "pid": "1234",
+          "msgid": "ID47",
+          "exampleSDID@32473.iut": "3",
+          "exampleSDID@32473.eventSource": "Application"
+        }
+      },
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "rfc5424 with a non-UTC offset is converted to UTC",
+    "line": "<34>1 2026-03-03T07:44:07+05:30 host1 su - ID1 - session opened",
+    "expect": {
+      "timestamp": "2026-03-03T02:14:07Z",
+      "app": "su",
+      "facility": 4,
+      "severity": 2,
+      "message": "session opened",
+      "entities": {"extra": {"msgid": "ID1"}}
+    }
+  },
+  {
+    "name": "rfc5424 with every optional field missing",
+    "line": "<13>1 2026-03-03T00:00:00Z - - - - - hello",
+    "expect": {
+      "timestamp": "2026-03-03T00:00:00Z",
+      "host": null,
+      "app": null,
+      "message": "hello",
+      "entities": {"extra": {}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "rfc5424 structured data with a bracket and an escaped quote inside a value",
+    "line": "<13>1 2026-03-03T00:00:00Z h a - - [x@1 note=\"a ] b \\\"q\\\"\"][y@2 k=\"v\"] msg",
+    "expect": {
+      "message": "msg",
+      "entities": {"extra": {"x@1.note": "a ] b \"q\"", "y@2.k": "v"}}
+    }
+  },
+  {
+    "name": "rfc5424 with no message",
+    "line": "<13>1 2026-03-03T00:00:00Z h a - - -",
+    "expect": {"message": "", "parse_status": "parsed"}
+  },
+  {
+    "name": "rfc5424 with a missing timestamp cannot be placed in time",
+    "line": "<13>1 - host1 app - - - no time here",
+    "expect": {"timestamp": null, "host": "host1", "parse_status": "unparsed"}
+  },
+  {
+    "name": "rfc5424 with a timestamp that has no timezone",
+    "line": "<13>1 2026-03-03T00:00:00 host1 app - - - hi",
+    "expect": {"timestamp": null, "host": null, "parse_status": "unparsed"}
+  },
+  {
+    "name": "rfc5424 with unterminated structured data",
+    "line": "<13>1 2026-03-03T00:00:00Z host1 app - - [x@1 k=\"v\" msg",
+    "expect": {"parse_status": "unparsed"}
+  },
+  {
+    "name": "not a log line",
+    "line": "this is not a log line",
+    "expect": {"timestamp": null, "host": null, "source_type": "unknown", "parse_status": "unparsed"}
+  },
+  {
+    "name": "impossible date",
+    "line": "Feb 31 10:00:00 host1 app: x",
+    "expect": {"timestamp": null, "parse_status": "unparsed"}
+  },
+  {
+    "name": "impossible time",
+    "line": "Mar  3 25:00:00 host1 app: x",
+    "expect": {"parse_status": "unparsed"}
+  },
+  {
+    "name": "unknown month",
+    "line": "Xyz  3 10:00:00 host1 app: x",
+    "expect": {"parse_status": "unparsed"}
+  },
+  {
+    "name": "PRI above the maximum of 191",
+    "line": "<999>Mar  3 10:00:00 host1 app: x",
+    "expect": {"parse_status": "unparsed"}
+  }
+]
