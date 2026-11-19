@@ -10,19 +10,22 @@ At 2:14 am a cable between two routers goes bad. Within a minute, five devices w
 
 Large teams solve this with a SIEM such as Splunk or the Elastic stack. Small IT teams, college labs and homelabs usually have neither the budget nor the time to run one, and are left with `grep`.
 
-## What this tool will do
+## The goal
 
-Given the same 3,000 lines, it should answer:
+Given the same 3,000 lines, the finished tool should answer:
 
 > **One incident, Critical.** The link between R1 and R2 failed at 02:14:07, and everything else is a consequence. Check the cable or SFP on R1 `GigabitEthernet0/1`.
 
 Each part of that answer links to the log lines behind it.
 
-- **Understands network logs:** Cisco IOS, Linux authentication and DHCP to start with.
-- **Detects incidents with rules, not guesswork:** link flaps, routing session drops, brute-force logins, DHCP exhaustion, config changes, device reloads.
-- **Groups related alerts:** one failed link that takes down OSPF and BGP on three routers is reported as one incident with one root cause.
-- **Explains in plain English:** an AI model writes the explanation, but only from evidence the rules already found.
-- **Works without the AI:** detection, correlation and reports run fully offline.
+| Step | What it means | Today |
+|---|---|---|
+| Understand network logs | Cisco IOS, Linux authentication and DHCP to start with | Works |
+| Detect problems with rules, not guesswork | Link flaps, routing drops, brute-force logins, DHCP exhaustion and more | Works |
+| Say how serious each one is, and why | A fixed, testable severity with a one-line reason | Works |
+| Group related alerts | One failed link that takes down OSPF and BGP on three routers becomes one incident with one root cause | Next |
+| Explain in plain English | An AI model writes the explanation, but only from evidence the rules already found | Planned |
+| Work without the AI | Detection, grouping and reports run fully offline | Works for everything built so far |
 
 ## How it works
 
@@ -31,31 +34,31 @@ Each part of that answer links to the log lines behind it.
     |
     v
  +---------------------+
- | Read and parse      |   time, device, message type, interface, addresses
+ | Read and parse      |   time, device, message type, interface, addresses      built
  +---------------------+
     |
     v
  +---------------------+
- | Mine templates      |   thousands of similar lines become a few patterns
+ | Mine templates      |   thousands of similar lines become a few patterns      built
  +---------------------+
     |
     v
  +---------------------+
- | Detect              |   rules look for the signature of each kind of problem
+ | Detect and score    |   rules find each kind of problem and rate it           built
  +---------------------+
     |
     v
  +---------------------+
- | Correlate           |   related findings become one incident with a root cause
+ | Correlate           |   related findings become one incident with a cause     next
  +---------------------+
     |
     v
  +---------------------+
- | Explain             |   plain-English summary, checked against the evidence
+ | Explain             |   plain-English summary, checked against the evidence   planned
  +---------------------+
     |
     v
- report, dashboard, alerts
+ report (built), dashboard and alerts (planned)
 ```
 
 Two design rules shape the project:
@@ -109,6 +112,27 @@ Findings
       Detail    noted: password spraying, succeeded
       Evidence  401 line(s) (showing 5)
 ```
+
+## What it detects
+
+| Rule | Detects | Default trigger | Severity |
+|---|---|---|---|
+| Link flap | An interface bouncing down and up | 5 downs on one interface in 5 minutes | Medium; High at 10 or more |
+| Interface down | An interface that stayed down | Down for more than 30 seconds | Info |
+| BGP session down | A BGP session dropping | Any drop | Critical |
+| OSPF adjacency loss | An OSPF neighbor leaving the FULL state | Any loss | High |
+| DHCP exhaustion | A DHCP pool with no addresses left | 10 refusals in 5 minutes | High |
+| Config change | Someone changing a device's configuration | Any change | Info |
+| Brute-force login | Password guessing from one address | 20 failed logins in 10 minutes | Medium; Critical if a login then succeeds |
+| CPU hog | A process holding the CPU too long | 3 warnings in 5 minutes | High |
+| Memory failure | A device running out of memory | Any failure | High |
+| Device reload | A reload being requested | Any request | High |
+| Device restart | A device starting up, requested or not | Any restart | Critical |
+| MAC flapping | A MAC address moving between ports, the usual sign of a loop | 3 warnings in one VLAN in 5 minutes | High |
+
+Every threshold is a setting in `backend/netlog/config/rules.toml`, and you can replace or add rules with your own file through `--rules`. A deliberate shutdown, a single unplugged cable and one mistyped password are not reported as problems.
+
+[docs/RULES.md](docs/RULES.md) describes each rule in full: its log signature, usual causes, and when it can be wrong.
 
 ## Getting started
 
