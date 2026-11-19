@@ -90,7 +90,7 @@ def test_scenario_cisco_lines_are_fully_understood(path):
             assert event.event_key, event.raw
             assert event.entities.extra.get("seq"), event.raw
         else:
-            assert event.source_type is SourceType.SYSLOG_GENERIC, event.raw
+            assert event.source_type is not SourceType.CISCO_IOS, event.raw
 
     assert (coverage.partial, coverage.unparsed) == (0, 0)
 

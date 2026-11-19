@@ -154,6 +154,60 @@ The digit in the message code is the severity (`%LINK-3-UPDOWN` is severity 3). 
 
 A Cisco message with a code this project has no extractor for is still a parsed event: it has its event key, severity and message, and no entities. A message whose code is known but whose wording is not what the extractor expects is marked `partial`, so the gap shows up in parse coverage.
 
+## Linux authentication events
+
+Lines from `sshd`, `sudo` and `cron` get the source type `linux_auth`.
+
+| Event key | Message | Entities |
+|---|---|---|
+| `sshd.failed_password` | `Failed password for ... from ... port ...` | `username`, `src_ip`, `port` |
+| `sshd.accepted` | `Accepted password for ...` or `Accepted publickey for ...` | `username`, `src_ip`, `port` |
+| `sshd.invalid_user` | `Invalid user ... from ...` | `username`, `src_ip`, `port` |
+| `sshd.connection_closed` | `Connection closed by ...`, `Disconnected from ...`, `Disconnecting ...` | `username`, `src_ip`, `port`, `reason` |
+| `sshd.max_auth_attempts` | `maximum authentication attempts exceeded for ...` | `username`, `src_ip`, `port` |
+| `sshd.auth_failure` | `pam_unix(sshd:auth): authentication failure; ...` | `username`, `src_ip` |
+| `sshd.session_opened`, `sshd.session_closed` | `pam_unix(sshd:session): session opened for user ...` | `username`, `state_to` |
+| `cron.session_opened`, `cron.session_closed` | The same, from cron | `username`, `state_to` |
+| `sudo.command` | `bob : TTY=... ; PWD=... ; USER=root ; COMMAND=...` | `username` |
+| `sudo.auth_failure` | The same, with `3 incorrect password attempts` | `username` |
+| `sudo.not_in_sudoers` | The same, with `user NOT in sudoers` | `username` |
+
+| Key in `entities.extra` | Meaning |
+|---|---|
+| `pid` | The process id from the syslog tag, such as the `2417` in `sshd[2417]` |
+| `invalid_user` | `true` when the account does not exist on the server |
+| `method` | How the login was attempted: `password`, `publickey` |
+| `src_host` | The source, when sshd logged a hostname and not an address. `src_ip` is then empty |
+| `target_user`, `command`, `tty` | For sudo: who the command ran as, the command, and the terminal |
+| `attempts` | For `sudo.auth_failure`: the number of wrong passwords |
+
+A username is whatever the person logging in typed. It can contain spaces or text that imitates the rest of the message, such as `admin from 10.0.0.1 port 22`. The address and port that sshd appends are always at the end of the line, so they are read from the end and the username takes whatever is left.
+
+## DHCP events
+
+Lines from `dhcpd` get the source type `dhcp`. In these events `mac` is the client and `dst_ip` is the address being handed out.
+
+| Event key | Message | Entities |
+|---|---|---|
+| `dhcp.discover` | `DHCPDISCOVER from <mac> via <interface>` | `mac`, `interface` |
+| `dhcp.no_free_leases` | A discover that ends in `no free leases` | `mac`, `interface`, `reason` |
+| `dhcp.offer` | `DHCPOFFER on <ip> to <mac> via <interface>` | `dst_ip`, `mac`, `interface` |
+| `dhcp.request` | `DHCPREQUEST for <ip> from <mac> via <interface>` | `dst_ip`, `mac`, `interface`, `reason` |
+| `dhcp.ack` | `DHCPACK on <ip> to <mac> via <interface>` | `dst_ip`, `mac`, `interface` |
+| `dhcp.nak` | `DHCPNAK on <ip> to <mac> via <interface>` | `dst_ip`, `mac`, `interface` |
+| `dhcp.release` | `DHCPRELEASE of <ip> from <mac> via <interface>` | `dst_ip`, `mac`, `interface` |
+| `dhcp.decline` | `DHCPDECLINE of <ip> from <mac> via <interface>` | `dst_ip`, `mac`, `interface`, `reason` |
+
+| Key in `entities.extra` | Meaning |
+|---|---|
+| `hostname` | The name the client reported. Chosen by the client, so never trusted |
+| `network` | For `dhcp.no_free_leases`: the subnet whose pool is empty |
+| `server_id` | For `dhcp.request`: the server the client is answering |
+| `relay` | The relay agent's address, when the request did not arrive on a local interface. `interface` is then empty |
+| `lease` | For `dhcp.release`: `found` or `not found` |
+
+A line from one of these programs with a message that matches no pattern is still an event with the right source type. It has no event key.
+
 ## Worked examples
 
 The examples assume the year 2026 and the UTC timezone, since these lines carry neither.
@@ -198,7 +252,7 @@ Mar  3 02:20:11 srv1 sshd[2417]: Failed password for invalid user admin from 203
 | `entities.src_ip` | `203.0.113.9` | Message text |
 | `entities.port` | `51522` | Message text |
 | `entities.protocol` | `ssh` | The program |
-| `entities.extra` | `{"invalid_user": "true"}` | The words "invalid user" |
+| `entities.extra` | `{"pid": "2417", "invalid_user": "true"}` | The syslog tag, and the words "invalid user" |
 
 ### 3. DHCP pool exhausted
 
@@ -215,4 +269,6 @@ Mar  3 09:01:44 dhcp1 dhcpd[811]: DHCPDISCOVER from 00:11:22:33:44:55 via eth1: 
 | `event_key` | `dhcp.no_free_leases` | Defined by this project |
 | `entities.mac` | `00:11:22:33:44:55` | Message text |
 | `entities.interface` | `eth1` | Message text; a Linux name, kept as logged |
-| `entities.extra` | `{"network": "10.20.0.0/24"}` | Message text |
+| `entities.protocol` | `dhcp` | The program |
+| `entities.reason` | `network 10.20.0.0/24: no free leases` | Message text |
+| `entities.extra` | `{"pid": "811", "network": "10.20.0.0/24"}` | The syslog tag and the message text |

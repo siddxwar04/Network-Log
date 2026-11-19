@@ -1,0 +1,177 @@
+[
+  {
+    "name": "discover",
+    "line": "Mar  3 03:00:01 dhcp1 dhcpd[811]: DHCPDISCOVER from 70:85:c2:5e:4d:11 via eth1",
+    "expect": {
+      "timestamp": "2026-03-03T03:00:01Z",
+      "host": "dhcp1",
+      "source_type": "dhcp",
+      "app": "dhcpd",
+      "event_key": "dhcp.discover",
+      "entities": {
+        "protocol": "dhcp",
+        "mac": "70:85:c2:5e:4d:11",
+        "interface": "eth1",
+        "dst_ip": null,
+        "reason": null,
+        "extra": {"pid": "811"}
+      },
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "discover with a client hostname",
+    "line": "Mar  3 03:00:01 dhcp1 dhcpd[811]: DHCPDISCOVER from 70:85:C2:5E:4D:11 (LAPTOP-7F3A) via eth1",
+    "expect": {
+      "event_key": "dhcp.discover",
+      "entities": {"mac": "70:85:c2:5e:4d:11", "extra": {"pid": "811", "hostname": "LAPTOP-7F3A"}}
+    }
+  },
+  {
+    "name": "discover refused: no free leases",
+    "line": "Mar  3 03:14:38 dhcp1 dhcpd[811]: DHCPDISCOVER from 70:85:c2:23:f3:5a via eth1: network 10.20.0.0/24: no free leases",
+    "expect": {
+      "event_key": "dhcp.no_free_leases",
+      "entities": {
+        "mac": "70:85:c2:23:f3:5a",
+        "interface": "eth1",
+        "reason": "network 10.20.0.0/24: no free leases",
+        "extra": {"pid": "811", "network": "10.20.0.0/24"}
+      }
+    }
+  },
+  {
+    "name": "discover through a relay agent",
+    "line": "Mar  3 03:00:01 dhcp1 dhcpd[811]: DHCPDISCOVER from 00:11:22:33:44:55 via 10.20.0.1",
+    "expect": {
+      "event_key": "dhcp.discover",
+      "entities": {"interface": null, "extra": {"pid": "811", "relay": "10.20.0.1"}}
+    }
+  },
+  {
+    "name": "offer",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPOFFER on 10.20.0.67 to 70:85:c2:5e:4d:11 via eth1",
+    "expect": {
+      "event_key": "dhcp.offer",
+      "entities": {"dst_ip": "10.20.0.67", "mac": "70:85:c2:5e:4d:11", "interface": "eth1"}
+    }
+  },
+  {
+    "name": "offer with a client hostname",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPOFFER on 10.20.0.68 to 70:85:c2:5e:4d:12 (printer-22A0) via eth1",
+    "expect": {
+      "event_key": "dhcp.offer",
+      "entities": {"dst_ip": "10.20.0.68", "extra": {"pid": "811", "hostname": "printer-22A0"}}
+    }
+  },
+  {
+    "name": "request naming the server",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPREQUEST for 10.20.0.67 (10.20.0.2) from 70:85:c2:5e:4d:11 via eth1",
+    "expect": {
+      "event_key": "dhcp.request",
+      "entities": {
+        "dst_ip": "10.20.0.67",
+        "mac": "70:85:c2:5e:4d:11",
+        "interface": "eth1",
+        "extra": {"pid": "811", "server_id": "10.20.0.2"}
+      }
+    }
+  },
+  {
+    "name": "request to renew",
+    "line": "Mar  3 03:05:00 dhcp1 dhcpd[811]: DHCPREQUEST for 10.20.0.67 from 70:85:c2:5e:4d:11 via eth1",
+    "expect": {
+      "event_key": "dhcp.request",
+      "entities": {"dst_ip": "10.20.0.67", "reason": null, "extra": {"pid": "811"}}
+    }
+  },
+  {
+    "name": "request for a lease that is not available",
+    "line": "Mar  3 03:05:00 dhcp1 dhcpd[811]: DHCPREQUEST for 10.20.0.9 from 00:11:22:33:44:55 via eth1: lease 10.20.0.9 unavailable.",
+    "expect": {
+      "event_key": "dhcp.request",
+      "entities": {"dst_ip": "10.20.0.9", "interface": "eth1", "reason": "lease 10.20.0.9 unavailable."}
+    }
+  },
+  {
+    "name": "ack with a client hostname",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPACK on 10.20.0.67 to 70:85:c2:5e:4d:11 (cam-8613) via eth1",
+    "expect": {
+      "event_key": "dhcp.ack",
+      "entities": {
+        "dst_ip": "10.20.0.67",
+        "mac": "70:85:c2:5e:4d:11",
+        "interface": "eth1",
+        "extra": {"pid": "811", "hostname": "cam-8613"}
+      }
+    }
+  },
+  {
+    "name": "ack without a hostname",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPACK on 10.20.0.67 to 70:85:c2:5e:4d:11 via eth1",
+    "expect": {"event_key": "dhcp.ack", "entities": {"dst_ip": "10.20.0.67", "extra": {"pid": "811"}}}
+  },
+  {
+    "name": "ack with a hostname that imitates the end of the message",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPACK on 10.20.0.9 to 00:11:22:33:44:55 (evil) via eth9 (x) via eth1",
+    "expect": {
+      "entities": {
+        "dst_ip": "10.20.0.9",
+        "mac": "00:11:22:33:44:55",
+        "interface": "eth1",
+        "extra": {"pid": "811", "hostname": "evil) via eth9 (x"}
+      }
+    }
+  },
+  {
+    "name": "nak",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPNAK on 10.99.0.5 to 00:11:22:33:44:55 via eth1",
+    "expect": {"event_key": "dhcp.nak", "entities": {"dst_ip": "10.99.0.5", "mac": "00:11:22:33:44:55"}}
+  },
+  {
+    "name": "nak through a relay agent",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPNAK on 10.99.0.5 to 00:11:22:33:44:55 via 10.20.0.1",
+    "expect": {"event_key": "dhcp.nak", "entities": {"interface": null, "extra": {"pid": "811", "relay": "10.20.0.1"}}}
+  },
+  {
+    "name": "release",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPRELEASE of 10.20.0.9 from 00:11:22:33:44:55 (LAPTOP-1) via eth1 (found)",
+    "expect": {
+      "event_key": "dhcp.release",
+      "entities": {
+        "dst_ip": "10.20.0.9",
+        "interface": "eth1",
+        "extra": {"pid": "811", "hostname": "LAPTOP-1", "lease": "found"}
+      }
+    }
+  },
+  {
+    "name": "release of a lease the server does not know",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPRELEASE of 10.20.0.9 from 00:11:22:33:44:55 via eth1 (not found)",
+    "expect": {"event_key": "dhcp.release", "entities": {"extra": {"pid": "811", "lease": "not found"}}}
+  },
+  {
+    "name": "decline",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPDECLINE of 10.20.0.9 from 00:11:22:33:44:55 via eth1: abandoned",
+    "expect": {"event_key": "dhcp.decline", "entities": {"dst_ip": "10.20.0.9", "reason": "abandoned"}}
+  },
+  {
+    "name": "decline with a hostname",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPDECLINE of 10.20.0.9 from 00:11:22:33:44:55 (android-11) via eth1",
+    "expect": {"event_key": "dhcp.decline", "entities": {"extra": {"pid": "811", "hostname": "android-11"}}}
+  },
+  {
+    "name": "a dhcpd message with no pattern is still a DHCP event",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: Wrote 245 leases to leases file.",
+    "expect": {"source_type": "dhcp", "event_key": null, "parse_status": "parsed"}
+  },
+  {
+    "name": "a client id that is not a MAC address is partial",
+    "line": "Mar  3 03:00:02 dhcp1 dhcpd[811]: DHCPDISCOVER from not-a-mac via eth1",
+    "expect": {
+      "event_key": "dhcp.discover",
+      "entities": {"mac": null, "extra": {"pid": "811"}},
+      "parse_status": "partial"
+    }
+  }
+]

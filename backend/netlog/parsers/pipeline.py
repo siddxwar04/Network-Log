@@ -10,6 +10,7 @@ from datetime import UTC, tzinfo
 from pathlib import Path
 
 from netlog.ingestion.reader import DEFAULT_MAX_LINE_LENGTH, RawLine, read_lines
+from netlog.parsers import dhcp, linux_auth
 from netlog.parsers.cisco import CiscoParser
 from netlog.parsers.syslog import SyslogParser
 from netlog.schema import Event, ParseStatus
@@ -28,6 +29,8 @@ class Coverage:
     partial: int = 0
     unparsed: int = 0
     blank: int = 0
+    # Parsed lines whose message was also recognized: they have an event key.
+    classified: int = 0
     _unparsed_shapes: Counter[str] = field(default_factory=Counter, repr=False)
 
     @property
@@ -39,9 +42,14 @@ class Coverage:
     def percent_parsed(self) -> float:
         return 100.0 * self.parsed / self.total if self.total else 0.0
 
+    @property
+    def percent_classified(self) -> float:
+        return 100.0 * self.classified / self.total if self.total else 0.0
+
     def record(self, event: Event) -> None:
         if event.parse_status is ParseStatus.PARSED:
             self.parsed += 1
+            self.classified += event.event_key is not None
         elif event.parse_status is ParseStatus.PARTIAL:
             self.partial += 1
         else:
@@ -62,6 +70,7 @@ class LineParser:
 
     def parse(self, raw: RawLine) -> Event:
         event = self._cisco.apply(self._syslog.parse(raw))
+        event = dhcp.apply(linux_auth.apply(event))
         if raw.truncated and event.parse_status is ParseStatus.PARSED:
             event.parse_status = ParseStatus.PARTIAL
         return event

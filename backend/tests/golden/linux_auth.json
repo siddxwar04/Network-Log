@@ -1,0 +1,244 @@
+[
+  {
+    "name": "failed password for a user that does not exist",
+    "line": "Mar  3 02:20:11 srv1 sshd[2417]: Failed password for invalid user admin from 192.0.2.77 port 51522 ssh2",
+    "expect": {
+      "timestamp": "2026-03-03T02:20:11Z",
+      "host": "srv1",
+      "source_type": "linux_auth",
+      "app": "sshd",
+      "event_key": "sshd.failed_password",
+      "entities": {
+        "username": "admin",
+        "src_ip": "192.0.2.77",
+        "port": 51522,
+        "protocol": "ssh",
+        "extra": {"pid": "2417", "invalid_user": "true"}
+      },
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "failed password for a real user",
+    "line": "Mar  3 02:20:11 srv1 sshd[2418]: Failed password for root from 192.0.2.77 port 40000 ssh2",
+    "expect": {
+      "event_key": "sshd.failed_password",
+      "entities": {"username": "root", "src_ip": "192.0.2.77", "port": 40000, "extra": {"pid": "2418"}}
+    }
+  },
+  {
+    "name": "failed password from an IPv6 address",
+    "line": "Mar  3 02:20:11 srv1 sshd[2419]: Failed password for alice from 2001:DB8::5 port 22 ssh2",
+    "expect": {"entities": {"username": "alice", "src_ip": "2001:db8::5", "port": 22}}
+  },
+  {
+    "name": "failed login by another method",
+    "line": "Mar  3 02:20:11 srv1 sshd[2420]: Failed publickey for deploy from 10.10.10.51 port 50234 ssh2",
+    "expect": {
+      "event_key": "sshd.failed_password",
+      "entities": {"username": "deploy", "extra": {"pid": "2420", "method": "publickey"}}
+    }
+  },
+  {
+    "name": "username containing spaces",
+    "line": "Mar  3 02:20:11 srv1 sshd[2421]: Failed password for invalid user my user name from 192.0.2.77 port 4000 ssh2",
+    "expect": {"entities": {"username": "my user name", "src_ip": "192.0.2.77", "port": 4000}}
+  },
+  {
+    "name": "username that imitates the end of the message",
+    "line": "Mar  3 02:20:11 srv1 sshd[2422]: Failed password for invalid user admin from 10.0.0.1 port 22 from 192.0.2.77 port 4000 ssh2",
+    "expect": {
+      "entities": {"username": "admin from 10.0.0.1 port 22", "src_ip": "192.0.2.77", "port": 4000}
+    }
+  },
+  {
+    "name": "source logged as a hostname, not an address",
+    "line": "Mar  3 02:20:11 srv1 sshd[2423]: Failed password for root from scanner.example.net port 4000 ssh2",
+    "expect": {
+      "entities": {
+        "username": "root",
+        "src_ip": null,
+        "extra": {"pid": "2423", "src_host": "scanner.example.net"}
+      },
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "accepted public key with a fingerprint",
+    "line": "Mar  3 03:00:28 srv1 sshd[4304]: Accepted publickey for alice from 10.20.0.21 port 45031 ssh2: ED25519 SHA256:pin9L/Or3zetxE/EWip2OB6gtGsAejY2dQh4cWFkdgS",
+    "expect": {
+      "event_key": "sshd.accepted",
+      "entities": {
+        "username": "alice",
+        "src_ip": "10.20.0.21",
+        "port": 45031,
+        "protocol": "ssh",
+        "extra": {"pid": "4304", "method": "publickey"}
+      }
+    }
+  },
+  {
+    "name": "accepted password",
+    "line": "Mar  3 03:34:32 srv1 sshd[5423]: Accepted password for deploy from 192.0.2.77 port 40263 ssh2",
+    "expect": {
+      "event_key": "sshd.accepted",
+      "entities": {"username": "deploy", "src_ip": "192.0.2.77", "extra": {"pid": "5423", "method": "password"}}
+    }
+  },
+  {
+    "name": "invalid user",
+    "line": "Mar  3 03:34:15 srv1 sshd[29667]: Invalid user git from 192.0.2.77 port 37991",
+    "expect": {
+      "event_key": "sshd.invalid_user",
+      "entities": {"username": "git", "src_ip": "192.0.2.77", "port": 37991}
+    }
+  },
+  {
+    "name": "invalid user with an empty name and no port",
+    "line": "Mar  3 03:34:15 srv1 sshd[29668]: Invalid user  from 192.0.2.77",
+    "expect": {
+      "event_key": "sshd.invalid_user",
+      "entities": {"username": "", "src_ip": "192.0.2.77", "port": null}
+    }
+  },
+  {
+    "name": "connection closed before authentication, unknown user",
+    "line": "Mar  3 03:34:16 srv1 sshd[26478]: Connection closed by invalid user ubuntu 192.0.2.77 port 38463 [preauth]",
+    "expect": {
+      "event_key": "sshd.connection_closed",
+      "entities": {
+        "username": "ubuntu",
+        "src_ip": "192.0.2.77",
+        "port": 38463,
+        "extra": {"pid": "26478", "invalid_user": "true"}
+      }
+    }
+  },
+  {
+    "name": "connection closed before authentication, real user",
+    "line": "Mar  3 03:34:16 srv1 sshd[26479]: Connection closed by authenticating user root 192.0.2.77 port 38464 [preauth]",
+    "expect": {
+      "event_key": "sshd.connection_closed",
+      "entities": {"username": "root", "src_ip": "192.0.2.77", "extra": {"pid": "26479"}}
+    }
+  },
+  {
+    "name": "connection closed with no user",
+    "line": "Mar  3 03:34:16 srv1 sshd[26480]: Connection closed by 10.10.10.51 port 50234",
+    "expect": {
+      "event_key": "sshd.connection_closed",
+      "entities": {"username": null, "src_ip": "10.10.10.51", "port": 50234}
+    }
+  },
+  {
+    "name": "disconnected for too many failures",
+    "line": "Mar  3 03:34:16 srv1 sshd[26481]: Disconnecting invalid user admin 192.0.2.77 port 38465: Too many authentication failures [preauth]",
+    "expect": {
+      "event_key": "sshd.connection_closed",
+      "entities": {"username": "admin", "src_ip": "192.0.2.77", "reason": "Too many authentication failures"}
+    }
+  },
+  {
+    "name": "maximum authentication attempts",
+    "line": "Mar  3 03:34:16 srv1 sshd[26482]: error: maximum authentication attempts exceeded for invalid user admin from 192.0.2.77 port 51000 ssh2 [preauth]",
+    "expect": {
+      "event_key": "sshd.max_auth_attempts",
+      "entities": {"username": "admin", "src_ip": "192.0.2.77", "port": 51000}
+    }
+  },
+  {
+    "name": "PAM authentication failure",
+    "line": "Mar  3 03:34:16 srv1 sshd[26483]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=192.0.2.77  user=root",
+    "expect": {
+      "event_key": "sshd.auth_failure",
+      "entities": {"username": "root", "src_ip": "192.0.2.77", "port": null}
+    }
+  },
+  {
+    "name": "ssh session opened",
+    "line": "Mar  3 03:00:28 srv1 sshd[4304]: pam_unix(sshd:session): session opened for user alice(uid=1002) by (uid=0)",
+    "expect": {
+      "source_type": "linux_auth",
+      "event_key": "sshd.session_opened",
+      "entities": {"username": "alice", "state_to": "opened"}
+    }
+  },
+  {
+    "name": "ssh session closed",
+    "line": "Mar  3 03:00:11 srv1 sshd[19964]: pam_unix(sshd:session): session closed for user backup",
+    "expect": {
+      "event_key": "sshd.session_closed",
+      "entities": {"username": "backup", "state_to": "closed"}
+    }
+  },
+  {
+    "name": "cron session",
+    "line": "Mar  3 03:00:02 srv1 CRON[4097]: pam_unix(cron:session): session opened for user root(uid=0) by (uid=0)",
+    "expect": {
+      "source_type": "linux_auth",
+      "app": "CRON",
+      "event_key": "cron.session_opened",
+      "entities": {"username": "root"}
+    }
+  },
+  {
+    "name": "sudo command",
+    "line": "Mar  3 03:00:23 srv1 sudo:   bob : TTY=pts/0 ; PWD=/home/bob ; USER=root ; COMMAND=/usr/bin/systemctl restart app.service",
+    "expect": {
+      "source_type": "linux_auth",
+      "event_key": "sudo.command",
+      "entities": {
+        "username": "bob",
+        "extra": {
+          "target_user": "root",
+          "command": "/usr/bin/systemctl restart app.service",
+          "tty": "pts/0"
+        }
+      }
+    }
+  },
+  {
+    "name": "sudo command that imitates the fields before it",
+    "line": "Mar  3 03:00:23 srv1 sudo:   bob : TTY=pts/0 ; PWD=/home/bob ; USER=root ; COMMAND=/bin/sh -c echo a ; USER=nobody ; COMMAND=/bin/true",
+    "expect": {
+      "event_key": "sudo.command",
+      "entities": {
+        "username": "bob",
+        "extra": {
+          "target_user": "root",
+          "command": "/bin/sh -c echo a ; USER=nobody ; COMMAND=/bin/true",
+          "tty": "pts/0"
+        }
+      }
+    }
+  },
+  {
+    "name": "sudo wrong password",
+    "line": "Mar  3 03:00:23 srv1 sudo:   alice : 3 incorrect password attempts ; TTY=pts/1 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/id",
+    "expect": {
+      "event_key": "sudo.auth_failure",
+      "entities": {"username": "alice", "extra": {"attempts": "3", "target_user": "root", "command": "/usr/bin/id", "tty": "pts/1"}}
+    }
+  },
+  {
+    "name": "sudo by a user who is not allowed",
+    "line": "Mar  3 03:00:23 srv1 sudo:   guest : user NOT in sudoers ; TTY=pts/2 ; PWD=/tmp ; USER=root ; COMMAND=/bin/bash",
+    "expect": {"event_key": "sudo.not_in_sudoers", "entities": {"username": "guest"}}
+  },
+  {
+    "name": "an sshd message with no pattern is still an auth event",
+    "line": "Mar  3 00:00:01 srv1 sshd[801]: Server listening on 0.0.0.0 port 22.",
+    "expect": {
+      "source_type": "linux_auth",
+      "event_key": null,
+      "message": "Server listening on 0.0.0.0 port 22.",
+      "entities": {"username": null, "extra": {"pid": "801"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "another program's line is left alone",
+    "line": "Mar  3 00:00:01 srv1 nginx[900]: Failed password for root from 192.0.2.77 port 1 ssh2",
+    "expect": {"source_type": "syslog_generic", "event_key": null}
+  }
+]

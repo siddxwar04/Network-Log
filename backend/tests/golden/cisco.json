@@ -394,7 +394,7 @@
   {
     "name": "a message code inside a program's own message is not Cisco",
     "line": "Mar  3 02:14:07 srv1 sshd[99]: Invalid user %LINK-3-UPDOWN: Interface Gi0/1, changed state to down from 192.0.2.77 port 4000",
-    "expect": {"source_type": "syslog_generic", "app": "sshd", "event_key": null}
+    "expect": {"source_type": "linux_auth", "app": "sshd", "event_key": "sshd.invalid_user", "severity": null}
   },
   {
     "name": "the message code's severity wins over PRI",
