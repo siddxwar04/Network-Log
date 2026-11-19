@@ -1,8 +1,8 @@
 """Rule definitions: loading them from TOML and checking they make sense.
 
-Rules are data. The engine knows how to run a "threshold" rule and a "sequence" rule;
-everything specific to one kind of problem (which messages, which thresholds, what to
-call it) lives in `config/rules.toml`.
+Rules are data. The engine knows how to run three kinds of rule; everything specific to
+one kind of problem (which messages, which thresholds, what to call it, how serious it
+is) lives in `config/rules.toml`.
 """
 
 from __future__ import annotations
@@ -18,17 +18,43 @@ from netlog.schema import Event
 from netlog.storage.database import ENTITY_COLUMNS
 
 _TOP_FIELDS = ("host", "app", "source_type", "severity", "event_key")
-KINDS = ("threshold", "sequence")
+KINDS = ("threshold", "sequence", "absence")
+# From least to most serious.
+LEVELS = ("info", "low", "medium", "high", "critical")
 
 _MATCHER_KEYS = {"event_keys", "where", "where_not"}
-_COMMON_KEYS = {"name", "incident_type", "description", "kind", "title", "enabled", "strong_at"}
+_COMMON_KEYS = {
+    "name",
+    "incident_type",
+    "description",
+    "kind",
+    "title",
+    "enabled",
+    "strong_at",
+    "severity",
+    "severity_because",
+    "severity_when",
+}
+_PAIR_KEYS = _COMMON_KEYS | {"first", "then", "same", "within_seconds"}
 _KEYS_BY_KIND = {
     "threshold": _COMMON_KEYS
     | _MATCHER_KEYS
-    | {"group_by", "window_seconds", "threshold", "distinct", "tags", "followed_by"},
-    "sequence": _COMMON_KEYS | {"first", "then", "same", "within_seconds"},
+    | {
+        "group_by",
+        "window_seconds",
+        "threshold",
+        "distinct",
+        "capture",
+        "tags",
+        "followed_by",
+        "related",
+    },
+    "sequence": _PAIR_KEYS,
+    "absence": _PAIR_KEYS,
 }
-_FOLLOWED_BY_KEYS = _MATCHER_KEYS | {"flag", "same", "within_seconds"}
+_FOLLOWED_BY_KEYS = _MATCHER_KEYS | {"flag", "same", "within_seconds", "after"}
+_RELATED_KEYS = _MATCHER_KEYS | {"same", "margin_seconds", "capture"}
+_ESCALATION_KEYS = {"flag", "strength_at_least", "level", "because"}
 
 
 class RuleError(ValueError):
@@ -47,6 +73,11 @@ def field_value(event: Event, name: str):
     if name == "severity" and value is not None:
         return int(value)
     return value
+
+
+def metric_name(field_name: str) -> str:
+    """The name a captured field gets among a finding's metrics: `extra.process` -> `process`."""
+    return field_name.removeprefix("extra.")
 
 
 def _is_field(name: object) -> bool:
@@ -88,6 +119,30 @@ class FollowedBy:
     matcher: Matcher
     same: tuple[str, ...]
     within_seconds: float
+    # Which moment the later event must come after: the moment the "threshold" was
+    # reached (a login succeeding once guessing is established), or the "last" matching
+    # event (a session that is up again after its final drop).
+    after: str = "threshold"
+
+
+@dataclass(frozen=True)
+class Related:
+    """Other events about the same thing, added to a finding's evidence."""
+
+    matcher: Matcher
+    same: tuple[str, ...]
+    margin_seconds: float
+    capture: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Escalation:
+    """A condition under which a finding is more serious than the rule's base level."""
+
+    level: str
+    because: str
+    flag: str | None = None
+    strength_at_least: float | None = None
 
 
 @dataclass(frozen=True)
@@ -99,15 +154,20 @@ class Rule:
     description: str = ""
     enabled: bool = True
     strong_at: float = 4.0
+    severity: str = "medium"
+    severity_because: str = ""
+    severity_when: tuple[Escalation, ...] = ()
     # threshold
     matcher: Matcher | None = None
     group_by: tuple[str, ...] = ()
     window_seconds: float = 0
     threshold: int = 0
     distinct: tuple[str, ...] = ()
+    capture: tuple[str, ...] = ()
     tags: tuple[Tag, ...] = ()
     followed_by: FollowedBy | None = None
-    # sequence
+    related: Related | None = None
+    # sequence and absence
     first: Matcher | None = None
     then: Matcher | None = None
     same: tuple[str, ...] = ()
@@ -148,6 +208,12 @@ class _Reader:
             raise self.fail(key, "must be a whole number")
         return int(value) if whole else float(value)
 
+    def level(self, key: str, default: str | None = None) -> str:
+        value = self.table.get(key, default)
+        if value not in LEVELS:
+            raise self.fail(key, f"is {value!r}; it must be one of: {', '.join(LEVELS)}")
+        return value
+
     def fields(self, key: str, *, required: bool = True) -> tuple[str, ...]:
         value = self.table.get(key, [])
         if not isinstance(value, list) or (required and not value):
@@ -181,6 +247,12 @@ class _Reader:
             raise self.fail(key, "is required and must be a table")
         return _Reader(self.rule_name, value, f"{key}.")
 
+    def entries(self, key: str) -> list[_Reader]:
+        value = self.table.get(key, [])
+        if not isinstance(value, list) or not all(isinstance(entry, dict) for entry in value):
+            raise self.fail(key, "must be a list of tables")
+        return [_Reader(self.rule_name, entry, f"{key}.") for entry in value]
+
 
 def _check_title(reader: _Reader, title: str, known: set[str]) -> None:
     try:
@@ -191,10 +263,26 @@ def _check_title(reader: _Reader, title: str, known: set[str]) -> None:
         raise reader.fail("title", f"uses {{{name}}}, which this rule does not provide")
 
 
+def _escalations(reader: _Reader, flags: set[str] | None) -> tuple[Escalation, ...]:
+    out = []
+    for entry in reader.entries("severity_when"):
+        entry.check_keys(_ESCALATION_KEYS)
+        flag = entry.table.get("flag")
+        strength = entry.table.get("strength_at_least")
+        if (flag is None) == (strength is None):
+            raise entry.fail("flag", "or strength_at_least must be given, and only one of them")
+        if flag is not None and flags is not None and flag not in flags:
+            raise entry.fail("flag", f"is {flag!r}, which this rule never sets")
+        if strength is not None:
+            strength = entry.number("strength_at_least")
+        out.append(Escalation(entry.level("level"), entry.text("because"), flag, strength))
+    return tuple(out)
+
+
 def _parse_rule(table: dict) -> Rule:
     name = table.get("name")
     if not isinstance(name, str) or not name.strip():
-        raise RuleError("a rule has no name; every [[rule]] needs name = \"...\"")
+        raise RuleError('a rule has no name; every [[rule]] needs name = "..."')
     reader = _Reader(name, table)
     kind = reader.text("kind")
     if kind not in KINDS:
@@ -211,22 +299,26 @@ def _parse_rule(table: dict) -> Rule:
         "description": table.get("description", ""),
         "enabled": enabled,
         "strong_at": reader.number("strong_at", 4.0),
+        "severity": reader.level("severity", "medium"),
+        "severity_because": table.get("severity_because", ""),
     }
     title_fields = {"host", "count", "duration"}
 
     if kind == "threshold":
         group_by = reader.fields("group_by")
         distinct = reader.fields("distinct", required=False)
+        capture = reader.fields("capture", required=False)
         metrics = {"peak_count", "threshold", "window_seconds", "rate_per_minute"}
-        metrics |= {f"distinct_{name}" for name in distinct}
+        metrics |= {f"distinct_{metric_name(name)}" for name in distinct}
+        flags: set[str] = set()
         tags = []
-        for entry in table.get("tags", []):
-            tag_reader = _Reader(name, entry if isinstance(entry, dict) else {}, "tags.")
-            tag_reader.check_keys({"name", "metric", "at_least"})
-            metric = tag_reader.text("metric")
+        for entry in reader.entries("tags"):
+            entry.check_keys({"name", "metric", "at_least"})
+            metric = entry.text("metric")
             if metric not in metrics | {"count"}:
-                raise tag_reader.fail("metric", f"is {metric!r}, which this rule does not measure")
-            tags.append(Tag(tag_reader.text("name"), metric, tag_reader.number("at_least")))
+                raise entry.fail("metric", f"is {metric!r}, which this rule does not measure")
+            tags.append(Tag(entry.text("name"), metric, entry.number("at_least")))
+            flags.add(tags[-1].name)
         followed_by = None
         if "followed_by" in table:
             sub = reader.sub("followed_by")
@@ -236,29 +328,53 @@ def _parse_rule(table: dict) -> Rule:
                 matcher=sub.matcher(),
                 same=sub.fields("same"),
                 within_seconds=sub.number("within_seconds"),
+                after=sub.table.get("after", "threshold"),
             )
+            if followed_by.after not in ("threshold", "last"):
+                raise sub.fail("after", 'must be "threshold" or "last"')
+            flags.add(followed_by.flag)
             for shared in followed_by.same:
                 if shared not in group_by:
                     raise sub.fail("same", f"names {shared!r}, which is not in group_by")
-        _check_title(reader, common["title"], title_fields | set(group_by) | metrics)
+        related = None
+        if "related" in table:
+            sub = reader.sub("related")
+            sub.check_keys(_RELATED_KEYS)
+            related = Related(
+                matcher=sub.matcher(),
+                same=sub.fields("same"),
+                margin_seconds=sub.number("margin_seconds"),
+                capture=sub.fields("capture", required=False),
+            )
+            for shared in related.same:
+                if shared not in group_by:
+                    raise sub.fail("same", f"names {shared!r}, which is not in group_by")
+        group_names = {metric_name(name) for name in group_by}
+        _check_title(reader, common["title"], title_fields | group_names | metrics)
         return Rule(
             **common,
+            severity_when=_escalations(reader, flags),
             matcher=reader.matcher(),
             group_by=group_by,
             window_seconds=reader.number("window_seconds"),
             threshold=reader.number("threshold", whole=True),
             distinct=distinct,
+            capture=capture,
             tags=tuple(tags),
             followed_by=followed_by,
+            related=related,
         )
 
     same = reader.fields("same")
     first, then = reader.sub("first"), reader.sub("then")
     first.check_keys(_MATCHER_KEYS)
     then.check_keys(_MATCHER_KEYS)
-    _check_title(reader, common["title"], title_fields | set(same) | {"delay"})
+    extra_fields = {"delay"} if kind == "sequence" else set()
+    same_names = {metric_name(name) for name in same}
+    _check_title(reader, common["title"], title_fields | same_names | extra_fields)
     return Rule(
         **common,
+        severity_when=_escalations(reader, None if kind == "sequence" else {"not_recovered"}),
         first=first.matcher(),
         then=then.matcher(),
         same=same,

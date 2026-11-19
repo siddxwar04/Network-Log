@@ -55,10 +55,17 @@ def run(db, lines, rules=None):
     return detect(db, upload, rules)
 
 
+def notable(findings):
+    """Findings above Info. Info findings (routine config changes, a desk port going
+    down) are recorded for context but are not problems in themselves."""
+    return [f for f in findings if f.severity != "info"]
+
+
 def scenario(db, name):
+    """Load a scenario and return (upload id, findings above Info, labelled incidents)."""
     upload = ingest_file(db, SCENARIOS / f"{name}.log", year=2026)
     labels = json.loads((SCENARIOS / f"{name}.labels.json").read_text(encoding="utf-8"))
-    return upload, detect(db, upload), labels["incidents"]
+    return upload, notable(detect(db, upload)), labels["incidents"]
 
 
 def label_time(text):
@@ -120,14 +127,111 @@ def test_overlap_scenario_gives_two_separate_findings(db):
     assert flap.start < brute.end and brute.start < flap.end
 
 
-QUIET = ("02_cascade", "03_config_bgp", "05_dhcp_exhaustion", "07_device_reload", "08_noise")
+@pytest.mark.parametrize("name", ["08_noise", "08_noise_50k"])
+def test_noise_gives_nothing_above_info(db, name):
+    upload, findings, incidents = scenario(db, name)
+
+    assert incidents == [] and findings == []
+    # What a normal day does produce: routine config changes and ports going down.
+    routine = {f.rule for f in db.findings(upload)}
+    assert routine == {"config_change", "interface_down"}
 
 
-@pytest.mark.parametrize("name", [*QUIET, "08_noise_50k"])
-def test_other_scenarios_and_noise_give_no_findings(db, name):
-    upload = ingest_file(db, SCENARIOS / f"{name}.log", year=2026)
+def test_cascade_scenario_gives_the_cause_and_every_effect(db):
+    upload, findings, (incident,) = scenario(db, "02_cascade")
 
-    assert detect(db, upload) == []
+    by_rule = {}
+    for finding in findings:
+        by_rule.setdefault(finding.rule, []).append(finding)
+    assert set(by_rule) == {"ospf_adjacency_loss", "bgp_session_down"}
+
+    # R1 lost three neighbors; R2, R3 and R4 each lost R1. The same for BGP.
+    for rule in ("ospf_adjacency_loss", "bgp_session_down"):
+        pairs = sorted((f.host, f.group["neighbor_ip"]) for f in by_rule[rule])
+        assert pairs == [
+            ("R1", "10.255.0.2"),
+            ("R1", "10.255.0.3"),
+            ("R1", "10.255.0.4"),
+            ("R2", "10.255.0.1"),
+            ("R3", "10.255.0.1"),
+            ("R4", "10.255.0.1"),
+        ]
+        assert all("recovered" in f.flags for f in by_rule[rule])
+    assert {f.severity for f in by_rule["bgp_session_down"]} == {"critical"}
+    assert {f.severity for f in by_rule["ospf_adjacency_loss"]} == {"high"}
+    assert incident["expected_severity"] == "critical"
+
+    reasons = {f.host: f.metrics["reason"] for f in by_rule["ospf_adjacency_loss"]}
+    assert reasons["R1"] == "Interface down or detached"
+    assert reasons["R2"] == reasons["R3"] == reasons["R4"] == "Dead timer expired"
+    bgp = by_rule["bgp_session_down"][0]
+    assert bgp.metrics["related_reason"] == "hold time expired"
+    assert bgp.metrics["related_error_code"] == "4/0"
+    assert len(bgp.evidence) == 3  # down, the notification, and the recovery
+
+    # The cause itself: R1's interface stayed down. It is Info on its own, because the
+    # tool cannot know this interface matters; correlation will connect it to the rest.
+    (cause,) = [
+        f for f in db.findings(upload) if f.rule == "interface_down" and f.host == "R1"
+    ]
+    root = incident["root_cause"]
+    assert cause.group == {"host": root["device"], "interface": root["entity"]}
+    assert cause.severity == "info" and cause.flags == []
+    assert cause.metrics["outage_seconds"] > 300
+    assert cause.start <= min(f.start for f in findings)
+    every_line = {n for f in [cause, *findings] for n in evidence_lines(db, f)}
+    assert every_line <= set(incident["lines"])
+
+
+def test_config_change_scenario_gives_the_change_and_the_bgp_drop(db):
+    upload, findings, (incident,) = scenario(db, "03_config_bgp")
+
+    (drop,) = findings
+    facts = incident["facts"]
+    assert drop.rule == "bgp_session_down" and drop.severity == incident["expected_severity"]
+    assert drop.group == {"host": "R2", "neighbor_ip": facts["neighbor"]}
+    assert drop.flags == ["recovered"]
+
+    changes = [f for f in db.findings(upload) if f.rule == "config_change" and f.host == "R2"]
+    by_user = [f for f in changes if f.group["username"] == facts["changed_by"]]
+    assert by_user and all(f.severity == "info" for f in by_user)
+    assert by_user[0].metrics["src_ip"] == facts["changed_from"]
+    # The change came shortly before the drop.
+    assert timedelta(seconds=10) < drop.start - by_user[0].start < timedelta(seconds=40)
+
+
+def test_dhcp_exhaustion_scenario_gives_one_finding(db):
+    _, findings, (incident,) = scenario(db, "05_dhcp_exhaustion")
+
+    (finding,) = findings
+    assert finding.rule == "dhcp_exhaustion" and finding.severity == incident["expected_severity"]
+    assert finding.group == {"host": "dhcp1", "extra.network": "10.20.0.0/24"}
+    assert finding.metrics["count"] == incident["facts"]["refused_requests"]
+    assert finding.metrics["distinct_mac"] == 45
+    assert finding.title.startswith("DHCP pool 10.20.0.0/24 on dhcp1 ran out: 153 requests")
+    assert evidence_lines(db, finding) == incident["lines"]
+
+
+def test_reload_scenario_gives_the_request_the_restart_and_the_neighbor_link(db):
+    upload, findings, (incident,) = scenario(db, "07_device_reload")
+
+    by_rule = {f.rule: f for f in findings}
+    assert set(by_rule) == {"device_reload", "device_restart"}
+    reload, restart = by_rule["device_reload"], by_rule["device_restart"]
+    assert reload.host == restart.host == "SW1"
+    assert reload.metrics["username"] == incident["facts"]["requested_by"]
+    assert reload.metrics["reason"] == "Reload Command"
+    assert (reload.severity, restart.severity) == ("high", "critical")
+    silent = (restart.start - reload.start).total_seconds()
+    assert abs(silent - incident["facts"]["silent_seconds"]) < 5
+
+    # The router on the other end saw its link to the switch go down for those minutes.
+    (link_down,) = [f for f in db.findings(upload) if f.rule == "interface_down" and f.host == "R3"]
+    assert link_down.group["interface"] == "GigabitEthernet0/3"
+    # R3's clock and SW1's differ by a second or two, so R3 can appear to notice first.
+    skew = timedelta(seconds=4)
+    assert reload.start - skew < link_down.start < reload.start + timedelta(seconds=10)
+    assert link_down.end < restart.start + skew
 
 
 # --- Link flap ---------------------------------------------------------------------------
@@ -493,12 +597,15 @@ def test_format_duration():
 
 
 def test_findings_are_stored_and_replaced_on_a_second_run(db):
-    upload, first, _ = scenario(db, "01_link_flap")
+    upload = ingest_file(db, SCENARIOS / "01_link_flap.log", year=2026)
+    first = detect(db, upload)
 
     again = detect(db, upload)
     stored = db.findings(upload)
 
-    assert len(stored) == 1 and stored[0].upload_id == upload and stored[0].id is not None
+    assert len(stored) == len(first) > 1
+    assert all(f.upload_id == upload and f.id is not None for f in stored)
+    assert all(f.severity and f.severity_reason for f in stored)
     assert [(f.rule, f.start, f.end, f.metrics, f.evidence) for f in again] == [
         (f.rule, f.start, f.end, f.metrics, f.evidence) for f in first
     ]

@@ -46,6 +46,17 @@ pattern = '\b0x[0-9a-fA-F]+\b'
 name = "NUM"
 pattern = '\b\d+\b'
 
+[severity]
+# The tool has no map of your network, so it cannot tell a core uplink from a desk port.
+# List what matters here; a finding on a listed device or interface is raised one level.
+#
+#   critical_devices = ["R1", "CORE-SW1"]
+#   critical_interfaces = [{ host = "R1", interface = "GigabitEthernet0/1" }]
+#
+# Interface names must be written in their long form.
+critical_devices = []
+critical_interfaces = []
+
 [dedup]
 # Repeats of one template on one device are counted as a single run while each repeat
 # comes within this many seconds of the one before.

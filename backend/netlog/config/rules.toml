@@ -1,13 +1,18 @@
 # Detection rules. Each [[rule]] looks for the log signature of one kind of problem.
+# docs/RULES.md describes every rule in plain words.
 #
-# Two kinds of rule exist:
+# Three kinds of rule exist:
 #
 #   kind = "threshold"   At least `threshold` matching events for the same group within
-#                        `window_seconds`. Optionally, `followed_by` checks whether a
-#                        second kind of event came afterwards.
+#                        `window_seconds`. With threshold = 1, every matching event is a
+#                        finding, and events close together are joined into one.
 #
 #   kind = "sequence"    An event matching `first`, then one matching `then` for the same
 #                        group within `within_seconds`.
+#
+#   kind = "absence"     An event matching `first` that is NOT followed by one matching
+#                        `then` for the same group within `within_seconds`: something
+#                        went down and did not come back.
 #
 # Which events a rule looks at:
 #   event_keys   the message types to match (required)
@@ -17,7 +22,25 @@
 # dst_ip, neighbor_ip, username, mac, vlan, protocol, port, state_from, state_to, reason)
 # or `extra.<name>`.
 #
-# A title may use any group_by field, {host}, {count}, {duration} and any metric.
+# Extras for threshold rules:
+#   distinct      count how many different values of a field were seen
+#   capture       record the most common value of a field
+#   tags          add a flag when a metric reaches a level
+#   followed_by   add a flag when a second kind of event came afterwards
+#   related       add other events about the same thing to the evidence
+#
+# How serious a finding is:
+#   severity           the base level: info, low, medium, high or critical
+#   severity_because   why, in a few words
+#   severity_when      conditions that raise it: a flag being set, or the strength
+#                      (0 to 1, how far past the threshold) reaching a level
+# A device or interface listed as critical in the settings raises the result one level.
+#
+# A title may use any group field, {host}, {count} and {duration}. A group field written
+# `extra.network` is used in a title as {network}.
+
+
+# --- Interfaces ---------------------------------------------------------------------------
 
 [[rule]]
 name = "link_flap"
@@ -35,6 +58,123 @@ threshold = 5
 # The finding reaches full strength when the busiest window holds this many times the
 # threshold.
 strong_at = 4.0
+severity = "medium"
+severity_because = "a flapping interface repeatedly interrupts whatever is connected through it"
+severity_when = [
+    { strength_at_least = 0.5, level = "high", because = "it went down at least twice as often as the threshold" },
+]
+
+[[rule]]
+name = "interface_down"
+incident_type = "interface_down"
+description = "An interface that went down and stayed down."
+kind = "absence"
+title = "Interface {interface} on {host} was down for {duration}"
+same = ["host", "interface"]
+# A brief drop that recovers within this time is not reported.
+within_seconds = 30
+first = { event_keys = ["LINK-3-UPDOWN"], where = { state_to = "down" } }
+then = { event_keys = ["LINK-3-UPDOWN"], where = { state_to = "up" } }
+# Without knowing the topology, a desk port and a core uplink look the same, so this
+# starts at the lowest level. List the interfaces that matter under [severity] in the
+# settings to raise them.
+severity = "info"
+severity_because = "one interface down is routine on its own (a device unplugged or switched off)"
+
+
+# --- Routing ------------------------------------------------------------------------------
+
+[[rule]]
+name = "bgp_session_down"
+incident_type = "bgp_session_down"
+description = "A BGP session to a neighbor dropped, so routes learned from it are withdrawn."
+kind = "threshold"
+title = "BGP session from {host} to {neighbor_ip} went down"
+event_keys = ["BGP-5-ADJCHANGE"]
+where = { state_to = "down" }
+group_by = ["host", "neighbor_ip"]
+window_seconds = 600
+threshold = 1
+capture = ["reason", "extra.vrf"]
+tags = [{ name = "flapping", metric = "count", at_least = 3 }]
+severity = "critical"
+severity_because = "a lost BGP session withdraws every route learned from that neighbor"
+
+# The notification says why the session closed, for example "hold time expired".
+[rule.related]
+event_keys = ["BGP-3-NOTIFICATION"]
+same = ["host", "neighbor_ip"]
+margin_seconds = 5
+capture = ["reason", "extra.direction", "extra.error_code", "extra.error_meaning"]
+
+[rule.followed_by]
+flag = "recovered"
+event_keys = ["BGP-5-ADJCHANGE"]
+where = { state_to = "up" }
+same = ["host", "neighbor_ip"]
+within_seconds = 86400
+# Up again after the final drop, not merely in between two drops.
+after = "last"
+
+[[rule]]
+name = "ospf_adjacency_loss"
+incident_type = "ospf_adjacency_loss"
+description = "An OSPF neighbor left the FULL state, so routes through it are recalculated."
+kind = "threshold"
+title = "OSPF adjacency from {host} to {neighbor_ip} was lost"
+event_keys = ["OSPF-5-ADJCHG"]
+where = { state_from = "FULL" }
+where_not = { state_to = "FULL" }
+group_by = ["host", "neighbor_ip"]
+window_seconds = 600
+threshold = 1
+capture = ["reason", "interface", "state_to"]
+tags = [{ name = "flapping", metric = "count", at_least = 3 }]
+severity = "high"
+severity_because = "a lost OSPF adjacency changes routing inside the network"
+
+[rule.followed_by]
+flag = "recovered"
+event_keys = ["OSPF-5-ADJCHG"]
+where = { state_to = "FULL" }
+same = ["host", "neighbor_ip"]
+within_seconds = 86400
+# Up again after the final drop, not merely in between two drops.
+after = "last"
+
+
+# --- Addressing ---------------------------------------------------------------------------
+
+[[rule]]
+name = "dhcp_exhaustion"
+incident_type = "dhcp_exhaustion"
+description = "The DHCP pool has no addresses left, so new devices cannot join the network."
+kind = "threshold"
+title = "DHCP pool {network} on {host} ran out: {count} requests refused in {duration}"
+event_keys = ["dhcp.no_free_leases"]
+group_by = ["host", "extra.network"]
+window_seconds = 300
+threshold = 10
+distinct = ["mac"]
+severity = "high"
+severity_because = "new devices on that network cannot get an address"
+
+
+# --- Changes and people -------------------------------------------------------------------
+
+[[rule]]
+name = "config_change"
+incident_type = "config_change"
+description = "Someone changed a device's configuration. Not a problem in itself, but the first thing to check when something breaks right afterwards."
+kind = "threshold"
+title = "Configuration of {host} changed by {username}"
+event_keys = ["SYS-5-CONFIG_I"]
+group_by = ["host", "username"]
+window_seconds = 300
+threshold = 1
+capture = ["src_ip", "extra.source", "extra.line"]
+severity = "info"
+severity_because = "a configuration change is normal work; it matters when a failure follows it"
 
 [[rule]]
 name = "brute_force_login"
@@ -52,6 +192,11 @@ strong_at = 4.0
 distinct = ["username", "host"]
 # Many usernames from one address is password spraying.
 tags = [{ name = "password_spraying", metric = "distinct_username", at_least = 5 }]
+severity = "medium"
+severity_because = "password guessing is common and usually fails"
+severity_when = [
+    { flag = "succeeded", level = "critical", because = "a login from the same address succeeded afterwards, so a password was probably guessed" },
+]
 
 # A successful login from the same address after the failures means a password was
 # guessed. This marks the finding as "succeeded".
@@ -60,3 +205,77 @@ flag = "succeeded"
 event_keys = ["sshd.accepted", "SEC_LOGIN-5-LOGIN_SUCCESS"]
 same = ["src_ip"]
 within_seconds = 600
+
+
+# --- Device health ------------------------------------------------------------------------
+
+[[rule]]
+name = "cpu_hog"
+incident_type = "resource_exhaustion"
+description = "A process is holding the CPU for too long, which can make the device miss protocol timers."
+kind = "threshold"
+title = "{count} CPU hog warnings on {host} in {duration}"
+event_keys = ["SYS-3-CPUHOG"]
+group_by = ["host"]
+window_seconds = 300
+threshold = 3
+capture = ["extra.process"]
+severity = "high"
+severity_because = "a starved CPU makes a device drop routing neighbors and management sessions"
+
+[[rule]]
+name = "memory_allocation_failure"
+incident_type = "resource_exhaustion"
+description = "The device could not allocate memory. It is close to failing or reloading."
+kind = "threshold"
+title = "Memory allocation failed on {host} ({count} times)"
+event_keys = ["SYS-2-MALLOCFAIL"]
+group_by = ["host"]
+window_seconds = 600
+threshold = 1
+capture = ["extra.process", "extra.bytes"]
+severity = "high"
+severity_because = "a device out of memory can stop forwarding or reload without warning"
+
+[[rule]]
+name = "device_reload"
+incident_type = "device_reload"
+description = "Someone asked a device to reload."
+kind = "threshold"
+title = "Reload of {host} was requested"
+event_keys = ["SYS-5-RELOAD"]
+group_by = ["host"]
+window_seconds = 900
+threshold = 1
+capture = ["username", "src_ip", "reason"]
+severity = "high"
+severity_because = "everything connected through the device is cut off while it reloads"
+
+[[rule]]
+name = "device_restart"
+incident_type = "device_reload"
+description = "A device started up. If no reload was requested just before, it crashed or lost power."
+kind = "threshold"
+title = "{host} restarted"
+event_keys = ["SYS-5-RESTART"]
+group_by = ["host"]
+window_seconds = 900
+threshold = 1
+capture = ["extra.software"]
+severity = "critical"
+severity_because = "the device was out of service, and everything behind it with it"
+
+[[rule]]
+name = "mac_flapping"
+incident_type = "mac_flapping"
+description = "A MAC address keeps moving between two ports, the usual sign of a switching loop."
+kind = "threshold"
+title = "MAC addresses flapping between ports on {host} in VLAN {vlan} ({count} warnings)"
+event_keys = ["SW_MATM-4-MACFLAP_NOTIF"]
+group_by = ["host", "vlan"]
+window_seconds = 300
+threshold = 3
+distinct = ["mac"]
+capture = ["interface", "extra.second_interface"]
+severity = "high"
+severity_because = "a switching loop can flood a whole VLAN within seconds"
