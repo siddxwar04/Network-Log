@@ -1,0 +1,41 @@
+# Topology of the simulated network that the sample logs come from (see
+# generator/README.md). It tells the tool what the logs cannot: which address belongs to
+# which device, and which interfaces are connected to each other.
+#
+# Use it with:  netlog analyze <file> --topology data/scenarios/topology.toml
+#
+# Write a file like this for your own network. Both sections are optional, and a partial
+# file is fine: list only what you know.
+
+[[device]]
+name = "R1"
+addresses = ["10.255.0.1", "10.0.0.1"]
+
+[[device]]
+name = "R2"
+addresses = ["10.255.0.2", "10.0.0.2"]
+
+[[device]]
+name = "R3"
+addresses = ["10.255.0.3", "10.0.0.3"]
+
+[[device]]
+name = "R4"
+addresses = ["10.255.0.4", "10.0.0.4"]
+
+[[device]]
+name = "srv1"
+addresses = ["10.10.10.20"]
+
+[[device]]
+name = "dhcp1"
+addresses = ["10.10.10.5", "10.20.0.2"]
+
+# Each access switch hangs off one distribution router.
+[[link]]
+a = { host = "R3", interface = "GigabitEthernet0/3" }
+b = { host = "SW1", interface = "GigabitEthernet0/1" }
+
+[[link]]
+a = { host = "R4", interface = "GigabitEthernet0/3" }
+b = { host = "SW2", interface = "GigabitEthernet0/1" }

@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
 
+from netlog.correlation.incident import Incident, Link
 from netlog.detection.finding import Finding
 from netlog.schema import Entities, Event, ParseStatus, Severity, SourceType
 
@@ -151,6 +152,24 @@ _MIGRATIONS = (
         severity_reason TEXT
     );
     CREATE INDEX findings_by_time ON findings (upload_id, start_ts);
+    """,
+    # Version 4: incidents, which group related findings.
+    """
+    CREATE TABLE incidents (
+        upload_id       INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+        id              TEXT NOT NULL,
+        title           TEXT NOT NULL,
+        severity        TEXT NOT NULL,
+        severity_reason TEXT NOT NULL,
+        start_ts        INTEGER NOT NULL,
+        end_ts          INTEGER NOT NULL,
+        devices         TEXT NOT NULL,
+        finding_ids     TEXT NOT NULL,
+        context_ids     TEXT NOT NULL,
+        links           TEXT NOT NULL,
+        notes           TEXT NOT NULL,
+        PRIMARY KEY (upload_id, id)
+    ) WITHOUT ROWID;
     """,
 )
 SCHEMA_VERSION = len(_MIGRATIONS)
@@ -659,6 +678,65 @@ class Database:
             )
             for row in rows
         ]
+
+    # --- Incidents ------------------------------------------------------------------------
+
+    def save_incidents(self, upload_id: int, incidents: Iterable[Incident]) -> None:
+        """Replace an upload's incidents."""
+        with self._db:
+            self._db.execute("DELETE FROM incidents WHERE upload_id = ?", (upload_id,))
+            self._db.executemany(
+                "INSERT INTO incidents (upload_id, id, title, severity, severity_reason, "
+                "start_ts, end_ts, devices, finding_ids, context_ids, links, notes) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    (
+                        upload_id,
+                        i.id,
+                        i.title,
+                        i.severity,
+                        i.severity_reason,
+                        _to_micros(i.start),
+                        _to_micros(i.end),
+                        json.dumps(i.devices),
+                        json.dumps(i.finding_ids),
+                        json.dumps(i.context_ids),
+                        json.dumps([[link.a, link.b, link.reason] for link in i.links]),
+                        json.dumps(i.notes),
+                    )
+                    for i in incidents
+                ),
+            )
+
+    def incidents(self, upload_id: int) -> list[Incident]:
+        """An upload's incidents, in the order they started."""
+        rows = self._db.execute(
+            "SELECT * FROM incidents WHERE upload_id = ? ORDER BY start_ts, id", (upload_id,)
+        )
+        return [self._incident(row) for row in rows]
+
+    def get_incident(self, upload_id: int, incident_id: str) -> Incident | None:
+        row = self._db.execute(
+            "SELECT * FROM incidents WHERE upload_id = ? AND id = ?", (upload_id, incident_id)
+        ).fetchone()
+        return self._incident(row) if row else None
+
+    @staticmethod
+    def _incident(row: sqlite3.Row) -> Incident:
+        return Incident(
+            id=row["id"],
+            upload_id=row["upload_id"],
+            title=row["title"],
+            severity=row["severity"],
+            severity_reason=row["severity_reason"],
+            start=_from_micros(row["start_ts"]),
+            end=_from_micros(row["end_ts"]),
+            devices=json.loads(row["devices"]),
+            finding_ids=json.loads(row["finding_ids"]),
+            context_ids=json.loads(row["context_ids"]),
+            links=[Link(a, b, reason) for a, b, reason in json.loads(row["links"])],
+            notes=json.loads(row["notes"]),
+        )
 
     def events_by_id(self, event_ids: Iterable[int]) -> list[Event]:
         """The events with the given ids, in time order."""

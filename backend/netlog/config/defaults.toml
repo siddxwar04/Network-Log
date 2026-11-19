@@ -57,6 +57,29 @@ pattern = '\b\d+\b'
 critical_devices = []
 critical_interfaces = []
 
+[correlation]
+# Two findings can belong to one incident when one starts within this many seconds of
+# the other ending. Findings chain: A near B and B near C puts all three together.
+gap_seconds = 60
+# Two findings of the same kind on the same device are one incident across a longer gap.
+# A reload is requested, and the device restarts three or four minutes later: one event.
+same_problem_gap_seconds = 900
+# Device clocks disagree by a few seconds. This much is allowed for when comparing times
+# from different devices.
+clock_skew_seconds = 5
+# A configuration change on a device is attached to an incident on that device that
+# starts within this many seconds afterwards.
+config_change_lookback_seconds = 300
+# An incident touching at least this many devices is raised one severity level.
+many_devices = 3
+# Kinds of finding that are about people, not the network. A security finding and a
+# network finding are only put together when they share an address, never because they
+# merely happened on the same device at the same time.
+security_types = ["brute_force"]
+# When working out which address belongs to which device from the logs alone: the share
+# of an address's adjacency events that a device must have an event of its own beside.
+owner_min_support = 0.5
+
 [dedup]
 # Repeats of one template on one device are counted as a single run while each repeat
 # comes within this many seconds of the one before.
