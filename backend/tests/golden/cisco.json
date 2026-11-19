@@ -1,0 +1,422 @@
+[
+  {
+    "name": "LINK-3-UPDOWN down, device time used",
+    "line": "Mar  3 02:46:12 R1 89085: Mar  3 02:46:11.699: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down",
+    "expect": {
+      "timestamp": "2026-03-03T02:46:11.699000Z",
+      "year_assumed": true,
+      "tz_assumed": true,
+      "host": "R1",
+      "source_type": "cisco_ios",
+      "app": null,
+      "severity": 3,
+      "event_key": "LINK-3-UPDOWN",
+      "message": "Interface GigabitEthernet0/1, changed state to down",
+      "entities": {
+        "interface": "GigabitEthernet0/1",
+        "state_to": "down",
+        "extra": {"seq": "89085"}
+      },
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "LINK-3-UPDOWN up, unsynchronized boot clock: collector time used",
+    "line": "Mar  3 02:36:41 SW1 2: *Mar  1 00:00:54.000: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up",
+    "expect": {
+      "timestamp": "2026-03-03T02:36:41Z",
+      "host": "SW1",
+      "event_key": "LINK-3-UPDOWN",
+      "entities": {
+        "interface": "GigabitEthernet0/1",
+        "state_to": "up",
+        "extra": {"seq": "2", "clock": "unsynced", "device_time": "*Mar  1 00:00:54.000"}
+      }
+    }
+  },
+  {
+    "name": "LINEPROTO-5-UPDOWN with a short interface name",
+    "line": "Mar  3 02:46:13 R1 89089: Mar  3 02:46:12.699: %LINEPROTO-5-UPDOWN: Line protocol on Interface Gi0/1, changed state to down",
+    "expect": {
+      "severity": 5,
+      "event_key": "LINEPROTO-5-UPDOWN",
+      "entities": {"interface": "GigabitEthernet0/1", "state_to": "down"}
+    }
+  },
+  {
+    "name": "LINEPROTO-5-UPDOWN with year and timezone in the device time",
+    "line": "Mar  3 02:46:13 R1 12: Mar  3 2026 02:46:12.699 UTC: %LINEPROTO-5-UPDOWN: Line protocol on Interface Vlan10, changed state to up",
+    "expect": {
+      "timestamp": "2026-03-03T02:46:12.699000Z",
+      "year_assumed": false,
+      "tz_assumed": false,
+      "entities": {"interface": "Vlan10", "state_to": "up"}
+    }
+  },
+  {
+    "name": "LINK-5-CHANGED administrative shutdown",
+    "line": "Mar  3 04:10:41 SW2 512: Mar  3 04:10:40.120: %LINK-5-CHANGED: Interface GigabitEthernet0/9, changed state to administratively down",
+    "expect": {
+      "event_key": "LINK-5-CHANGED",
+      "entities": {
+        "interface": "GigabitEthernet0/9",
+        "state_to": "administratively down",
+        "extra": {"seq": "512", "admin": "true"}
+      }
+    }
+  },
+  {
+    "name": "LINK-5-CHANGED with a lost-sync clock marker and no counter",
+    "line": "Mar  3 04:10:41 SW2 .Mar  3 04:10:40.120: %LINK-5-CHANGED: Interface Fa0/3, changed state to reset",
+    "expect": {
+      "timestamp": "2026-03-03T04:10:40.120000Z",
+      "entities": {"interface": "FastEthernet0/3", "state_to": "reset", "extra": {}}
+    }
+  },
+  {
+    "name": "BGP-5-ADJCHANGE down",
+    "line": "Mar  3 02:46:33 R1 89090: Mar  3 02:46:31.997: %BGP-5-ADJCHANGE: neighbor 10.255.0.2 Down BGP Notification sent",
+    "expect": {
+      "event_key": "BGP-5-ADJCHANGE",
+      "entities": {
+        "protocol": "bgp",
+        "neighbor_ip": "10.255.0.2",
+        "state_to": "down",
+        "reason": "BGP Notification sent"
+      }
+    }
+  },
+  {
+    "name": "BGP-5-ADJCHANGE up",
+    "line": "Mar  3 02:55:59 R2 22761: Mar  3 02:56:00.812: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Up",
+    "expect": {
+      "entities": {"protocol": "bgp", "neighbor_ip": "203.0.113.1", "state_to": "up", "reason": null}
+    }
+  },
+  {
+    "name": "BGP-5-ADJCHANGE in a VRF",
+    "line": "Mar  3 02:46:33 R1 7: Mar  3 02:46:31.997: %BGP-5-ADJCHANGE: neighbor 10.1.1.1 vpn vrf CUST-A Down Interface flap",
+    "expect": {
+      "entities": {
+        "neighbor_ip": "10.1.1.1",
+        "state_to": "down",
+        "reason": "Interface flap",
+        "extra": {"seq": "7", "vrf": "CUST-A"}
+      }
+    }
+  },
+  {
+    "name": "BGP-5-ADJCHANGE with an IPv6 neighbor",
+    "line": "Mar  3 02:46:33 R1 8: Mar  3 02:46:31.997: %BGP-5-ADJCHANGE: neighbor 2001:DB8::1 Down Peer closed the session",
+    "expect": {
+      "entities": {"neighbor_ip": "2001:db8::1", "state_to": "down", "reason": "Peer closed the session"}
+    }
+  },
+  {
+    "name": "BGP-3-NOTIFICATION sent, hold time expired",
+    "line": "Mar  3 02:46:35 R4 51514: Mar  3 02:46:34.269: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.1 4/0 (hold time expired) 0 bytes",
+    "expect": {
+      "severity": 3,
+      "event_key": "BGP-3-NOTIFICATION",
+      "entities": {
+        "protocol": "bgp",
+        "neighbor_ip": "10.255.0.1",
+        "reason": "hold time expired",
+        "extra": {
+          "seq": "51514",
+          "direction": "sent",
+          "error_code": "4/0",
+          "error_meaning": "Hold timer expired: no keepalive arrived in time"
+        }
+      }
+    }
+  },
+  {
+    "name": "BGP-3-NOTIFICATION received, administrative shutdown",
+    "line": "Mar  3 02:46:35 R2 9: Mar  3 02:46:34.269: %BGP-3-NOTIFICATION: received from neighbor 203.0.113.1 6/2 (Administrative Shutdown) 0 bytes",
+    "expect": {
+      "entities": {
+        "neighbor_ip": "203.0.113.1",
+        "reason": "Administrative Shutdown",
+        "extra": {
+          "seq": "9",
+          "direction": "received",
+          "error_code": "6/2",
+          "error_meaning": "Cease: administrative shutdown"
+        }
+      }
+    }
+  },
+  {
+    "name": "OSPF-5-ADJCHG full to down, dead timer",
+    "line": "Mar  3 02:46:45 R3 86650: Mar  3 02:46:46.102: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired",
+    "expect": {
+      "severity": 5,
+      "event_key": "OSPF-5-ADJCHG",
+      "entities": {
+        "protocol": "ospf",
+        "neighbor_ip": "10.255.0.1",
+        "interface": "GigabitEthernet0/1",
+        "state_from": "FULL",
+        "state_to": "DOWN",
+        "reason": "Dead timer expired",
+        "extra": {"seq": "86650", "process": "1"}
+      }
+    }
+  },
+  {
+    "name": "OSPF-5-ADJCHG loading to full",
+    "line": "Mar  3 02:55:40 R1 89110: Mar  3 02:55:39.401: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.3 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+    "expect": {
+      "entities": {"state_from": "LOADING", "state_to": "FULL", "reason": "Loading Done"}
+    }
+  },
+  {
+    "name": "OSPF-5-ADJCHG with an uptime counter instead of a date: collector time used",
+    "line": "Mar  3 02:46:12 R1 00:01:23: %OSPF-5-ADJCHG: Process 10, Nbr 10.255.0.2 on Gi0/1 from FULL to DOWN, Neighbor Down: Interface down or detached",
+    "expect": {
+      "timestamp": "2026-03-03T02:46:12Z",
+      "entities": {
+        "interface": "GigabitEthernet0/1",
+        "reason": "Interface down or detached",
+        "extra": {"clock": "uptime", "device_time": "00:01:23", "process": "10"}
+      }
+    }
+  },
+  {
+    "name": "SYS-5-CONFIG_I from a remote session",
+    "line": "Mar  3 02:40:02 R2 22740: Mar  3 02:40:03.551: %SYS-5-CONFIG_I: Configured from console by jdoe on vty0 (10.10.10.53)",
+    "expect": {
+      "event_key": "SYS-5-CONFIG_I",
+      "entities": {
+        "username": "jdoe",
+        "src_ip": "10.10.10.53",
+        "extra": {"seq": "22740", "source": "console", "line": "vty0"}
+      }
+    }
+  },
+  {
+    "name": "SYS-5-CONFIG_I from the console, no counter and no device time",
+    "line": "Mar  3 02:14:07 R1 %SYS-5-CONFIG_I: Configured from console by console",
+    "expect": {
+      "timestamp": "2026-03-03T02:14:07Z",
+      "source_type": "cisco_ios",
+      "entities": {"username": "console", "src_ip": null, "extra": {"source": "console"}}
+    }
+  },
+  {
+    "name": "SYS-5-CONFIG_I with a username that imitates the rest of the message",
+    "line": "Mar  3 02:40:02 R2 5: Mar  3 02:40:03.551: %SYS-5-CONFIG_I: Configured from console by evil on vty9 (192.0.2.4) on vty0 (10.10.10.53)",
+    "expect": {
+      "entities": {
+        "username": "evil on vty9 (192.0.2.4)",
+        "src_ip": "10.10.10.53",
+        "extra": {"seq": "5", "source": "console", "line": "vty0"}
+      }
+    }
+  },
+  {
+    "name": "SEC_LOGIN-4-LOGIN_FAILED",
+    "line": "Mar  3 02:14:07 R1 77: Mar  3 02:14:07.004: %SEC_LOGIN-4-LOGIN_FAILED: Login failed [user: admin] [Source: 192.0.2.77] [localport: 22] [Reason: Login Authentication Failed] at 02:14:07 UTC Tue Mar 3 2026",
+    "expect": {
+      "severity": 4,
+      "event_key": "SEC_LOGIN-4-LOGIN_FAILED",
+      "entities": {
+        "username": "admin",
+        "src_ip": "192.0.2.77",
+        "port": 22,
+        "protocol": "ssh",
+        "reason": "Login Authentication Failed"
+      }
+    }
+  },
+  {
+    "name": "SEC_LOGIN-4-LOGIN_FAILED with a username that imitates a source address",
+    "line": "Mar  3 02:14:07 R1 78: Mar  3 02:14:07.004: %SEC_LOGIN-4-LOGIN_FAILED: Login failed [user: x] [Source: 10.9.9.9] y] [Source: 192.0.2.77] [localport: 23] [Reason: Login Authentication Failed] at 02:14:07 UTC Tue Mar 3 2026",
+    "expect": {
+      "entities": {
+        "username": "x] [Source: 10.9.9.9] y",
+        "src_ip": "192.0.2.77",
+        "port": 23,
+        "protocol": "telnet"
+      }
+    }
+  },
+  {
+    "name": "SEC_LOGIN-5-LOGIN_SUCCESS",
+    "line": "Mar  3 02:38:32 R2 22739: Mar  3 02:38:33.551: %SEC_LOGIN-5-LOGIN_SUCCESS: Login Success [user: jdoe] [Source: 10.10.10.53] [localport: 22] at 02:38:32 UTC Tue Mar 3 2026",
+    "expect": {
+      "event_key": "SEC_LOGIN-5-LOGIN_SUCCESS",
+      "entities": {"username": "jdoe", "src_ip": "10.10.10.53", "port": 22, "reason": null}
+    }
+  },
+  {
+    "name": "SYS-5-RESTART straight from a device, no collector header",
+    "line": "<189>1: *Mar  1 00:00:52.000: %SYS-5-RESTART: System restarted -- Cisco IOS Software, C2960X Software (C2960X-UNIVERSALK9-M), Version 15.2(7)E3, RELEASE SOFTWARE (fc3)",
+    "expect": {
+      "timestamp": "2026-03-01T00:00:52Z",
+      "host": null,
+      "source_type": "cisco_ios",
+      "facility": 23,
+      "severity": 5,
+      "event_key": "SYS-5-RESTART",
+      "entities": {
+        "extra": {
+          "seq": "1",
+          "clock": "unsynced",
+          "device_time": "*Mar  1 00:00:52.000",
+          "software": "Cisco IOS Software, C2960X Software (C2960X-UNIVERSALK9-M), Version 15.2(7)E3, RELEASE SOFTWARE (fc3)"
+        }
+      },
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "SYS-5-RESTART with nothing after it",
+    "line": "Mar  3 02:36:39 SW1 1: *Mar  1 00:00:52.000: %SYS-5-RESTART: System restarted --",
+    "expect": {
+      "timestamp": "2026-03-03T02:36:39Z",
+      "event_key": "SYS-5-RESTART",
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "SYS-5-RELOAD requested remotely",
+    "line": "Mar  3 02:33:24 SW1 10474: Mar  3 02:33:25.675: %SYS-5-RELOAD: Reload requested by netops on vty0 (10.10.10.50). Reload Reason: Reload Command.",
+    "expect": {
+      "event_key": "SYS-5-RELOAD",
+      "entities": {
+        "username": "netops",
+        "src_ip": "10.10.10.50",
+        "reason": "Reload Command",
+        "extra": {"seq": "10474", "line": "vty0"}
+      }
+    }
+  },
+  {
+    "name": "SYS-5-RELOAD requested from the console",
+    "line": "Mar  3 02:33:24 SW1 3: Mar  3 02:33:25.675: %SYS-5-RELOAD: Reload requested by console. Reload Reason: Reload Command.",
+    "expect": {
+      "entities": {"username": "console", "src_ip": null, "reason": "Reload Command"}
+    }
+  },
+  {
+    "name": "SYS-3-CPUHOG",
+    "line": "Mar  3 02:14:07 R1 90: Mar  3 02:14:07.004: %SYS-3-CPUHOG: Task is running for (2004)msecs, more than (2000)msecs (1/0),process = Virtual Exec.",
+    "expect": {
+      "severity": 3,
+      "event_key": "SYS-3-CPUHOG",
+      "entities": {"extra": {"seq": "90", "duration_ms": "2004", "process": "Virtual Exec"}}
+    }
+  },
+  {
+    "name": "SYS-3-CPUHOG with another process",
+    "line": "Mar  3 02:14:09 R1 91: Mar  3 02:14:09.104: %SYS-3-CPUHOG: Task is running for (4012)msecs, more than (2000)msecs (3/1),process = BGP Router.",
+    "expect": {"entities": {"extra": {"seq": "91", "duration_ms": "4012", "process": "BGP Router"}}}
+  },
+  {
+    "name": "SYS-2-MALLOCFAIL",
+    "line": "Mar  3 02:14:07 R1 92: Mar  3 02:14:07.004: %SYS-2-MALLOCFAIL: Memory allocation of 65536 bytes failed from 0x60103098, alignment 0",
+    "expect": {
+      "severity": 2,
+      "event_key": "SYS-2-MALLOCFAIL",
+      "entities": {"extra": {"seq": "92", "bytes": "65536"}}
+    }
+  },
+  {
+    "name": "SYS-2-MALLOCFAIL with the process on the same line",
+    "line": "Mar  3 02:14:07 R1 93: Mar  3 02:14:07.004: %SYS-2-MALLOCFAIL: Memory allocation of 1028 bytes failed from 0x601617A4, alignment 0 Pool: Processor Free: 12 Cause: Memory fragmentation -Process= \"BGP Router\", ipl= 0, pid= 143",
+    "expect": {"entities": {"extra": {"seq": "93", "bytes": "1028", "process": "BGP Router"}}}
+  },
+  {
+    "name": "SW_MATM-4-MACFLAP_NOTIF",
+    "line": "Mar  3 02:14:07 SW1 94: Mar  3 02:14:07.004: %SW_MATM-4-MACFLAP_NOTIF: Host 0011.2233.4455 in vlan 10 is flapping between port Gi0/1 and port Gi0/2",
+    "expect": {
+      "severity": 4,
+      "event_key": "SW_MATM-4-MACFLAP_NOTIF",
+      "entities": {
+        "mac": "00:11:22:33:44:55",
+        "vlan": 10,
+        "interface": "GigabitEthernet0/1",
+        "extra": {"seq": "94", "second_interface": "GigabitEthernet0/2"}
+      }
+    }
+  },
+  {
+    "name": "SW_MATM-4-MACFLAP_NOTIF on port channels",
+    "line": "Mar  3 02:14:07 SW1 95: Mar  3 02:14:07.004: %SW_MATM-4-MACFLAP_NOTIF: Host aabb.cc00.0100 in vlan 200 is flapping between port Po1 and port Te1/0/1",
+    "expect": {
+      "entities": {
+        "mac": "aa:bb:cc:00:01:00",
+        "vlan": 200,
+        "interface": "Port-channel1",
+        "extra": {"seq": "95", "second_interface": "TenGigabitEthernet1/0/1"}
+      }
+    }
+  },
+  {
+    "name": "a message with no extractor still becomes a Cisco event",
+    "line": "Mar  3 03:02:10 SW1 10480: Mar  3 03:02:11.001: %ILPOWER-5-POWER_GRANTED: Interface Gi0/7: Power granted",
+    "expect": {
+      "source_type": "cisco_ios",
+      "severity": 5,
+      "event_key": "ILPOWER-5-POWER_GRANTED",
+      "message": "Interface Gi0/7: Power granted",
+      "entities": {"interface": null, "extra": {"seq": "10480"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "a known message with unexpected wording is partial, never a failure",
+    "line": "Mar  3 02:14:07 R1 96: Mar  3 02:14:07.004: %LINK-3-UPDOWN: something this parser has never seen",
+    "expect": {
+      "source_type": "cisco_ios",
+      "event_key": "LINK-3-UPDOWN",
+      "entities": {"interface": null, "extra": {"seq": "96"}},
+      "parse_status": "partial"
+    }
+  },
+  {
+    "name": "a neighbor that is not an address is partial",
+    "line": "Mar  3 02:14:07 R1 97: Mar  3 02:14:07.004: %BGP-5-ADJCHANGE: neighbor not-an-address Down Peer closed the session",
+    "expect": {"event_key": "BGP-5-ADJCHANGE", "entities": {"neighbor_ip": null}, "parse_status": "partial"}
+  },
+  {
+    "name": "a malformed message code is left as generic syslog",
+    "line": "Mar  3 02:14:07 R1 %LINK-3: broken code",
+    "expect": {
+      "source_type": "syslog_generic",
+      "event_key": null,
+      "message": "%LINK-3: broken code",
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "a message code inside a program's own message is not Cisco",
+    "line": "Mar  3 02:14:07 srv1 sshd[99]: Invalid user %LINK-3-UPDOWN: Interface Gi0/1, changed state to down from 192.0.2.77 port 4000",
+    "expect": {"source_type": "syslog_generic", "app": "sshd", "event_key": null}
+  },
+  {
+    "name": "the message code's severity wins over PRI",
+    "line": "<189>Mar  3 02:14:07 R1 55: Mar  3 02:14:07.001: %LINK-3-UPDOWN: Interface Gi0/1, changed state to down",
+    "expect": {"facility": 23, "severity": 3}
+  },
+  {
+    "name": "a device clock more than a day off is not believed",
+    "line": "Mar  3 02:14:07 R1 56: Jan  5 10:00:00.000: %LINK-3-UPDOWN: Interface Gi0/1, changed state to down",
+    "expect": {
+      "timestamp": "2026-03-03T02:14:07Z",
+      "entities": {"extra": {"seq": "56", "clock": "suspect", "device_time": "Jan  5 10:00:00.000"}}
+    }
+  },
+  {
+    "name": "device time just before midnight on New Year's Eve, collector just after",
+    "line": "Jan  1 00:00:00 R1 57: Dec 31 23:59:59.900: %LINK-3-UPDOWN: Interface Gi0/1, changed state to down",
+    "expect": {"timestamp": "2025-12-31T23:59:59.900000Z", "entities": {"extra": {"seq": "57"}}}
+  },
+  {
+    "name": "headerless line whose time cannot be read stays unparsed",
+    "line": "<189>42: 00:01:23: %LINK-3-UPDOWN: Interface Gi0/1, changed state to down",
+    "expect": {"timestamp": null, "source_type": "unknown", "parse_status": "unparsed"}
+  }
+]

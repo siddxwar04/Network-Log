@@ -1,3 +1,4 @@
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -139,11 +140,13 @@ def test_line_shape_groups_lines_that_differ_only_in_numbers():
 def test_every_scenario_line_has_a_readable_time_and_host(path):
     coverage = Coverage()
     hosts = set()
-    previous = None
+    latest = None
     for event in parse_file(path, year=2026, coverage=coverage):
         hosts.add(event.host)
-        assert previous is None or event.timestamp >= previous
-        previous = event.timestamp
+        # Files are in collector order. Device clocks are up to 2 seconds off, so an
+        # event's own time may sit slightly before the previous line's.
+        assert latest is None or event.timestamp >= latest - timedelta(seconds=5)
+        latest = event.timestamp if latest is None else max(latest, event.timestamp)
 
     assert coverage.unparsed == 0 and coverage.partial == 0
     assert hosts <= {"R1", "R2", "R3", "R4", "SW1", "SW2", "srv1", "dhcp1"}

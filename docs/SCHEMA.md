@@ -104,6 +104,56 @@ Linux-style names that are all lowercase with no slash, such as `eth0` or `ens33
 
 IP addresses are validated and stored in standard form (`2001:DB8:0:0:0:0:0:1` becomes `2001:db8::1`). MAC addresses are accepted in Cisco dotted (`0011.2233.4455`), colon or dash notation and stored in one form.
 
+## Cisco IOS events
+
+### Which timestamp is used
+
+A Cisco line stored by a syslog collector carries two times: the collector's, and the device's own inside the message.
+
+```
+Mar  3 02:46:12 R1 89085: Mar  3 02:46:11.699: %LINK-3-UPDOWN: ...
+|-------------|           |------------------|
+ collector time             device time
+```
+
+The device time is used, because it records when the event happened and has millisecond precision. The collector time is used instead in three cases, and `entities.extra["clock"]` says which:
+
+| `clock` | Meaning | Example device time |
+|---|---|---|
+| `unsynced` | The device marked its clock as not set (a leading `*`). A switch that has just booted prints a date in 1993 until NTP answers | `*Mar  1 00:00:52.000` |
+| `uptime` | The device prints time since boot, not a date | `00:01:23` |
+| `suspect` | The device's clock is more than 24 hours away from the collector's | `Jan  5 10:00:00.000` on a line collected on 3 March |
+
+When the collector time is used, the device's original text is kept in `entities.extra["device_time"]`.
+
+A device time has no year unless the device is configured to print one. The year is chosen so that the device time lands closest to the collector time, which handles a line logged at `Dec 31 23:59:59` and collected at `Jan  1 00:00:00`.
+
+A line that comes straight from a device with no collector header (`<189>42: Mar  3 02:14:07.123: %...`) has only the device time, so that is used whatever its state.
+
+### Severity
+
+The digit in the message code is the severity (`%LINK-3-UPDOWN` is severity 3). When a line also has a `<PRI>` prefix that disagrees, the message code wins.
+
+### Extra values
+
+| Key in `entities.extra` | Set for | Meaning |
+|---|---|---|
+| `seq` | Any Cisco message | The device's message counter. It restarts from 1 after a reboot |
+| `clock`, `device_time` | See above | Why the device's clock was not used |
+| `admin` | `LINK-5-CHANGED` | `true` when a person shut the interface on purpose |
+| `second_interface` | `SW_MATM-4-MACFLAP_NOTIF` | The other port the MAC address is flapping between |
+| `vrf` | `BGP-5-ADJCHANGE` | The VRF, when the session is in one |
+| `direction`, `error_code`, `error_meaning` | `BGP-3-NOTIFICATION` | `sent` or `received`, the code such as `4/0`, and what the code means |
+| `process` | `OSPF-5-ADJCHG`, `SYS-3-CPUHOG`, `SYS-2-MALLOCFAIL` | The OSPF process id, or the name of the process involved |
+| `source`, `line` | `SYS-5-CONFIG_I`, `SYS-5-RELOAD` | Where the change came from, such as `console` and `vty0` |
+| `duration_ms` | `SYS-3-CPUHOG` | How long the task held the CPU |
+| `bytes` | `SYS-2-MALLOCFAIL` | The size of the allocation that failed |
+| `software` | `SYS-5-RESTART` | The software version line |
+
+### Messages that are not understood
+
+A Cisco message with a code this project has no extractor for is still a parsed event: it has its event key, severity and message, and no entities. A message whose code is known but whose wording is not what the extractor expects is marked `partial`, so the gap shows up in parse coverage.
+
 ## Worked examples
 
 The examples assume the year 2026 and the UTC timezone, since these lines carry neither.
@@ -126,6 +176,7 @@ The examples assume the year 2026 and the UTC timezone, since these lines carry 
 | `message` | `Interface GigabitEthernet0/1, changed state to down` | Text after the code |
 | `entities.interface` | `GigabitEthernet0/1` | Message text |
 | `entities.state_to` | `down` | Message text |
+| `entities.extra` | `{"seq": "1042"}` | The counter before the device time |
 
 ### 2. Failed SSH login
 

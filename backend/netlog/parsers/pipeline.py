@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, tzinfo
 from pathlib import Path
 
-from netlog.ingestion.reader import DEFAULT_MAX_LINE_LENGTH, read_lines
+from netlog.ingestion.reader import DEFAULT_MAX_LINE_LENGTH, RawLine, read_lines
+from netlog.parsers.cisco import CiscoParser
 from netlog.parsers.syslog import SyslogParser
 from netlog.schema import Event, ParseStatus
 
@@ -52,6 +53,20 @@ class Coverage:
         return self._unparsed_shapes.most_common(count)
 
 
+class LineParser:
+    """Runs one line through every parser: the syslog header first, then vendor messages."""
+
+    def __init__(self, year: int | None = None, tz: tzinfo = UTC) -> None:
+        self._syslog = SyslogParser(year=year, tz=tz)
+        self._cisco = CiscoParser(year=year, tz=tz)
+
+    def parse(self, raw: RawLine) -> Event:
+        event = self._cisco.apply(self._syslog.parse(raw))
+        if raw.truncated and event.parse_status is ParseStatus.PARSED:
+            event.parse_status = ParseStatus.PARTIAL
+        return event
+
+
 def parse_file(
     path: str | Path,
     *,
@@ -66,7 +81,7 @@ def parse_file(
     event with status `unparsed`, so nothing is dropped silently. Pass a `Coverage`
     to collect the counts.
     """
-    parser = SyslogParser(year=year, tz=tz)
+    parser = LineParser(year=year, tz=tz)
     for raw in read_lines(path, max_line_length):
         if not raw.text.strip():
             if coverage is not None:
