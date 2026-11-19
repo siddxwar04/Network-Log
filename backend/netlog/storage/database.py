@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
 
+from netlog.detection.finding import Finding
 from netlog.schema import Entities, Event, ParseStatus, Severity, SourceType
 
 DEFAULT_DB_PATH = "data/netlog.db"
@@ -129,6 +130,27 @@ _MIGRATIONS = (
     # Version 2: finding the repeats of a template on a device (template mining, dedup).
     """
     CREATE INDEX events_by_template ON events (upload_id, template_id, host, ts);
+    """,
+    # Version 3: findings produced by the detection rules.
+    """
+    CREATE TABLE findings (
+        id              INTEGER PRIMARY KEY,
+        upload_id       INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+        rule            TEXT NOT NULL,
+        incident_type   TEXT NOT NULL,
+        title           TEXT NOT NULL,
+        host            TEXT,
+        group_values    TEXT NOT NULL,
+        start_ts        INTEGER NOT NULL,
+        end_ts          INTEGER NOT NULL,
+        metrics         TEXT NOT NULL,
+        flags           TEXT NOT NULL,
+        evidence        TEXT NOT NULL,
+        strength        REAL NOT NULL,
+        severity        TEXT,
+        severity_reason TEXT
+    );
+    CREATE INDEX findings_by_time ON findings (upload_id, start_ts);
     """,
 )
 SCHEMA_VERSION = len(_MIGRATIONS)
@@ -571,6 +593,75 @@ class Database:
         )
         for host, template_id, micros, event_id in rows:
             yield host, template_id, _from_micros(micros), event_id
+
+    # --- Findings -------------------------------------------------------------------------
+
+    def save_findings(self, upload_id: int, findings: Iterable[Finding]) -> None:
+        """Replace an upload's findings."""
+        with self._db:
+            self._db.execute("DELETE FROM findings WHERE upload_id = ?", (upload_id,))
+            self._db.executemany(
+                "INSERT INTO findings (upload_id, rule, incident_type, title, host, group_values, "
+                "start_ts, end_ts, metrics, flags, evidence, strength, severity, severity_reason) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    (
+                        upload_id,
+                        f.rule,
+                        f.incident_type,
+                        f.title,
+                        f.host,
+                        json.dumps(f.group, ensure_ascii=False),
+                        _to_micros(f.start),
+                        _to_micros(f.end),
+                        json.dumps(f.metrics, ensure_ascii=False),
+                        json.dumps(f.flags),
+                        json.dumps(f.evidence),
+                        f.strength,
+                        f.severity,
+                        f.severity_reason,
+                    )
+                    for f in findings
+                ),
+            )
+
+    def findings(self, upload_id: int) -> list[Finding]:
+        """An upload's findings, in the order they started."""
+        rows = self._db.execute(
+            "SELECT * FROM findings WHERE upload_id = ? ORDER BY start_ts, id", (upload_id,)
+        )
+        return [
+            Finding(
+                id=row["id"],
+                upload_id=row["upload_id"],
+                rule=row["rule"],
+                incident_type=row["incident_type"],
+                title=row["title"],
+                host=row["host"],
+                group=json.loads(row["group_values"]),
+                start=_from_micros(row["start_ts"]),
+                end=_from_micros(row["end_ts"]),
+                metrics=json.loads(row["metrics"]),
+                flags=json.loads(row["flags"]),
+                evidence=json.loads(row["evidence"]),
+                strength=row["strength"],
+                severity=row["severity"],
+                severity_reason=row["severity_reason"],
+            )
+            for row in rows
+        ]
+
+    def events_by_id(self, event_ids: Iterable[int]) -> list[Event]:
+        """The events with the given ids, in time order."""
+        ids = list(event_ids)
+        events: list[Event] = []
+        for offset in range(0, len(ids), 500):  # stay under SQLite's parameter limit
+            chunk = ids[offset : offset + 500]
+            marks = ", ".join("?" * len(chunk))
+            rows = self._db.execute(f"{_SELECT_EVENT} WHERE e.id IN ({marks})", chunk)
+            events += [self._event(row) for row in rows]
+        events.sort(key=lambda e: (e.timestamp is not None, e.timestamp, e.line_no))
+        return events
 
     def get_event(self, event_id: int) -> Event | None:
         row = self._db.execute(f"{_SELECT_EVENT} WHERE e.id = ?", (event_id,)).fetchone()

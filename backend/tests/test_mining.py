@@ -11,7 +11,7 @@ from netlog.ingestion.reader import RawLine
 from netlog.mining.dedup import find_runs
 from netlog.mining.templates import mine_templates
 from netlog.parsers.pipeline import LineParser
-from netlog.storage.database import SCHEMA_VERSION, Database, EventFilter
+from netlog.storage.database import _MIGRATIONS, SCHEMA_VERSION, Database, EventFilter
 
 SCENARIOS = Path("data/scenarios")
 LITERAL_VALUE = re.compile(
@@ -296,15 +296,16 @@ def test_deleting_an_upload_removes_its_templates(db):
 
 
 def test_version_1_database_is_upgraded(tmp_path):
+    # Build a database exactly as the first release created it.
     path = tmp_path / "old.db"
-    Database(path).close()
     raw = sqlite3.connect(path)
-    raw.execute("DROP INDEX events_by_template")
+    raw.executescript(_MIGRATIONS[0])
     raw.execute("PRAGMA user_version = 1")
     raw.close()
 
     with Database(path) as database:
-        assert database.schema_version == SCHEMA_VERSION >= 2
+        assert database.schema_version == SCHEMA_VERSION >= 3
+        assert database.findings(1) == []
         upload = store(database, [cisco(1, "R1", "%LINK-3-UPDOWN: Interface Gi0/1, changed state to down")])  # noqa: E501
         mine_templates(database, upload)
         assert len(find_runs(database, upload)) == 1

@@ -1,0 +1,62 @@
+# Detection rules. Each [[rule]] looks for the log signature of one kind of problem.
+#
+# Two kinds of rule exist:
+#
+#   kind = "threshold"   At least `threshold` matching events for the same group within
+#                        `window_seconds`. Optionally, `followed_by` checks whether a
+#                        second kind of event came afterwards.
+#
+#   kind = "sequence"    An event matching `first`, then one matching `then` for the same
+#                        group within `within_seconds`.
+#
+# Which events a rule looks at:
+#   event_keys   the message types to match (required)
+#   where        fields that must equal a value, or any value of a list
+#   where_not    fields that must not equal a value
+# Fields are: host, app, source_type, severity, event_key, any entity (interface, src_ip,
+# dst_ip, neighbor_ip, username, mac, vlan, protocol, port, state_from, state_to, reason)
+# or `extra.<name>`.
+#
+# A title may use any group_by field, {host}, {count}, {duration} and any metric.
+
+[[rule]]
+name = "link_flap"
+incident_type = "link_flap"
+description = "An interface that keeps going down and coming back, usually a bad cable, optic or port."
+kind = "threshold"
+title = "Interface {interface} on {host} went down {count} times in {duration}"
+# Only real link failures. A person shutting an interface logs LINK-5-CHANGED
+# ("administratively down") instead, so deliberate shutdowns are never counted.
+event_keys = ["LINK-3-UPDOWN"]
+where = { state_to = "down" }
+group_by = ["host", "interface"]
+window_seconds = 300
+threshold = 5
+# The finding reaches full strength when the busiest window holds this many times the
+# threshold.
+strong_at = 4.0
+
+[[rule]]
+name = "brute_force_login"
+incident_type = "brute_force"
+description = "Many failed logins from one address: someone guessing passwords."
+kind = "threshold"
+title = "{count} failed logins from {src_ip} in {duration}"
+# Linux servers and Cisco devices are counted together.
+event_keys = ["sshd.failed_password", "SEC_LOGIN-4-LOGIN_FAILED"]
+group_by = ["src_ip"]
+window_seconds = 600
+threshold = 20
+strong_at = 4.0
+# Count how many different usernames and devices were tried.
+distinct = ["username", "host"]
+# Many usernames from one address is password spraying.
+tags = [{ name = "password_spraying", metric = "distinct_username", at_least = 5 }]
+
+# A successful login from the same address after the failures means a password was
+# guessed. This marks the finding as "succeeded".
+[rule.followed_by]
+flag = "succeeded"
+event_keys = ["sshd.accepted", "SEC_LOGIN-5-LOGIN_SUCCESS"]
+same = ["src_ip"]
+within_seconds = 600
