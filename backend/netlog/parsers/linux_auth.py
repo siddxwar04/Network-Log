@@ -8,7 +8,7 @@ is anchored at the end and lets the username take whatever is left.
 
 from __future__ import annotations
 
-from netlog.parsers.patterns import PatternSet, clean, is_ip
+from netlog.parsers.patterns import PatternSet, Span, clean, is_ip
 from netlog.schema import Event, ParseStatus, SourceType
 
 # Programs whose lines belong to the authentication log, by lowercased name.
@@ -128,6 +128,15 @@ def _session(m):
 
 
 _BY_PROGRAM = {"sshd": (_SSHD, _PAM), "sudo": (_SUDO, _PAM), "cron": (_PAM,)}
+
+
+def spans(event: Event) -> list[Span]:
+    """Where the username sits in the event's message."""
+    for patterns in _BY_PROGRAM.get((event.app or "").lower(), ()):
+        found = patterns.spans(event.message)
+        if found is not None:
+            return found
+    return []
 
 
 def apply(event: Event) -> Event:

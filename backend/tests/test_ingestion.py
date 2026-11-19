@@ -136,7 +136,11 @@ def test_line_shape_groups_lines_that_differ_only_in_numbers():
     assert line_shape("error 17 on port 8080") == line_shape("error 3 on port 22")
 
 
-@pytest.mark.parametrize("path", sorted(Path("data/scenarios").glob("*.log")), ids=lambda p: p.name)
+# The 50,000-line file is covered once, by the classification test for all parsers.
+SMALL_SCENARIOS = sorted(p for p in Path("data/scenarios").glob("*.log") if "50k" not in p.name)
+
+
+@pytest.mark.parametrize("path", SMALL_SCENARIOS, ids=lambda p: p.name)
 def test_every_scenario_line_has_a_readable_time_and_host(path):
     coverage = Coverage()
     hosts = set()

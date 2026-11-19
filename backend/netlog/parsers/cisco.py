@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 
 from pydantic import ValidationError
 
+from netlog.parsers.patterns import Span, free_text_spans
 from netlog.parsers.syslog import MONTHS
 from netlog.schema import (
     Entities,
@@ -63,6 +64,14 @@ _BGP_ERRORS = {
 
 Extractor = Callable[[str], dict | None]
 _EXTRACTORS: dict[str, Extractor] = {}
+_PATTERNS: dict[str, re.Pattern[str]] = {}
+
+
+def spans(event: Event) -> list[Span]:
+    """Where the username sits in a Cisco event's message."""
+    pattern = _PATTERNS.get(event.event_key or "")
+    match = pattern.search(event.message) if pattern else None
+    return free_text_spans(match) if match else []
 
 
 def _extractor(*event_keys: str, pattern: str):
@@ -76,6 +85,7 @@ def _extractor(*event_keys: str, pattern: str):
 
         for key in event_keys:
             _EXTRACTORS[key] = extract
+            _PATTERNS[key] = compiled
         return extract
 
     return register
@@ -182,7 +192,7 @@ def _ospf_adjacency(m):
 
 @_extractor(
     "SYS-5-CONFIG_I",
-    pattern=r"^Configured from (\S+) by (.+?)(?: on (\S+))?(?: \(([0-9A-Fa-f.:]+)\))?\s*$",
+    pattern=r"^Configured from (\S+) by (?P<user>.+?)(?: on (\S+))?(?: \(([0-9A-Fa-f.:]+)\))?\s*$",
 )
 def _config_change(m):
     return {"username": m[2], "src_ip": m[4], "extra": _clean({"source": m[1], "line": m[3]})}
@@ -192,7 +202,7 @@ def _config_change(m):
     "SEC_LOGIN-4-LOGIN_FAILED",
     "SEC_LOGIN-5-LOGIN_SUCCESS",
     pattern=(
-        r"^Login (?:failed|Success) \[user: (.*)\] \[Source: (\S+)\] \[localport: (\d+)\]"
+        r"^Login (?:failed|Success) \[user: (?P<user>.*)\] \[Source: (\S+)\] \[localport: (\d+)\]"
         r"(?: \[Reason: (.*?)\])?(?: at .*)?$"
     ),
 )
@@ -210,7 +220,7 @@ def _login(m):
 @_extractor(
     "SYS-5-RELOAD",
     pattern=(
-        r"^Reload requested(?: by (\S+?))?(?: on (\S+))?(?: \(([0-9A-Fa-f.:]+)\))?\.?"
+        r"^Reload requested(?: by (?P<user>\S+?))?(?: on (\S+))?(?: \(([0-9A-Fa-f.:]+)\))?\.?"
         r"(?: Reload [Rr]eason: (.*?)\.?)?\s*$"
     ),
 )

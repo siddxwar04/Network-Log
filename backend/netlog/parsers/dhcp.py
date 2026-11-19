@@ -12,7 +12,7 @@ patterns read the interface from the end of the line.
 
 from __future__ import annotations
 
-from netlog.parsers.patterns import PatternSet, clean, is_ip
+from netlog.parsers.patterns import PatternSet, Span, clean, is_ip
 from netlog.schema import Event, ParseStatus, SourceType
 
 PROGRAMS = ("dhcpd",)
@@ -84,6 +84,11 @@ def _release(m):
 @_DHCPD.rule("dhcp.decline", r"^DHCPDECLINE of (?P<ip>\S+) from " + _CLIENT + _VIA + _TAIL)
 def _decline(m):
     return _fields(m)
+
+
+def spans(event: Event) -> list[Span]:
+    """Where the client's hostname sits in the event's message."""
+    return _DHCPD.spans(event.message) or []
 
 
 def apply(event: Event) -> Event:

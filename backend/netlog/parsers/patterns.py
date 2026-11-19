@@ -29,6 +29,23 @@ def clean(extra: dict[str, str | None]) -> dict[str, str]:
     return {key: value for key, value in extra.items() if value}
 
 
+# Named groups that hold text chosen by a person or a client, and the placeholder that
+# stands for them. Such text can be anything at all, so template mining masks it by its
+# exact position in the message.
+FREE_TEXT_GROUPS = {"user": "<USER>", "hostname": "<HOST>"}
+
+Span = tuple[int, int, str]  # start, end, placeholder
+
+
+def free_text_spans(match: re.Match[str]) -> list[Span]:
+    """Where the person-chosen values sit in a matched message."""
+    spans = []
+    for group, placeholder in FREE_TEXT_GROUPS.items():
+        if group in match.re.groupindex and match.group(group):
+            spans.append((*match.span(group), placeholder))
+    return spans
+
+
 class PatternSet:
     def __init__(self) -> None:
         self._rules: list[tuple[str, re.Pattern[str], Callable[[re.Match[str]], dict]]] = []
@@ -45,6 +62,13 @@ class PatternSet:
             return build
 
         return register
+
+    def spans(self, message: str) -> list[Span] | None:
+        """The free-text positions in `message`, or None if no pattern matches it."""
+        for _, pattern, _ in self._rules:
+            if match := pattern.search(message):
+                return free_text_spans(match)
+        return None
 
     def apply(self, event: Event) -> None:
         """Set the event key and entities of `event` from the first matching pattern."""

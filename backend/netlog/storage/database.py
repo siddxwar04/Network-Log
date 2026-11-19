@@ -126,6 +126,10 @@ _MIGRATIONS = (
         PRIMARY KEY (upload_id, id)
     ) WITHOUT ROWID;
     """,
+    # Version 2: finding the repeats of a template on a device (template mining, dedup).
+    """
+    CREATE INDEX events_by_template ON events (upload_id, template_id, host, ts);
+    """,
 )
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -193,6 +197,21 @@ class Upload:
         return 100.0 * self.parsed / self.line_count if self.line_count else 0.0
 
 
+@dataclass(frozen=True)
+class Template:
+    """A message pattern shared by many events, such as `Interface <IF>, changed state to down`."""
+
+    id: str
+    source_type: str
+    event_key: str | None
+    pattern: str
+    count: int
+    first_seen: datetime | None
+    last_seen: datetime | None
+    hosts: tuple[str, ...]
+    examples: tuple[int, ...]  # ids of up to a few events that match the pattern
+
+
 @dataclass
 class EventFilter:
     """Which events to return. Every condition given must hold."""
@@ -202,6 +221,8 @@ class EventFilter:
     host: str | None = None
     source_type: str | None = None
     parse_status: str | None = None
+    parse_status_not: str | None = None
+    template_id: str | None = None
     # "At or above" in seriousness: 3 returns severities 0 to 3 (error and worse).
     min_severity: int | None = None
     event_keys: tuple[str, ...] | list[str] = ()
@@ -227,6 +248,10 @@ class EventFilter:
             add("e.source_type = ?", str(self.source_type))
         if self.parse_status is not None:
             add("e.parse_status = ?", str(self.parse_status))
+        if self.parse_status_not is not None:
+            add("e.parse_status != ?", str(self.parse_status_not))
+        if self.template_id is not None:
+            add("e.template_id = ?", self.template_id)
         if self.min_severity is not None:
             add("e.severity <= ?", int(self.min_severity))
         if self.event_keys:
@@ -477,6 +502,93 @@ class Database:
             (upload_id, line_no - before, line_no + after),
         )
         return [(row[0], row[1]) for row in rows]
+
+    # --- Templates ------------------------------------------------------------------------
+
+    def save_templates(
+        self,
+        upload_id: int,
+        templates: Iterable[Template],
+        assignments: Iterable[tuple[str, int]],
+    ) -> None:
+        """Replace an upload's templates. `assignments` pairs a template id with an event id."""
+        with self._db:
+            self._db.execute("DELETE FROM templates WHERE upload_id = ?", (upload_id,))
+            self._db.execute(
+                "UPDATE events SET template_id = NULL WHERE upload_id = ?", (upload_id,)
+            )
+            self._db.executemany(
+                "UPDATE events SET template_id = ? WHERE id = ? AND upload_id = ?",
+                ((template_id, event_id, upload_id) for template_id, event_id in assignments),
+            )
+            self._db.executemany(
+                "INSERT INTO templates (upload_id, id, source_type, event_key, pattern, count, "
+                "first_seen, last_seen, hosts, examples) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    (
+                        upload_id,
+                        t.id,
+                        t.source_type,
+                        t.event_key,
+                        t.pattern,
+                        t.count,
+                        _to_micros(t.first_seen),
+                        _to_micros(t.last_seen),
+                        json.dumps(list(t.hosts)),
+                        json.dumps(list(t.examples)),
+                    )
+                    for t in templates
+                ),
+            )
+
+    def templates(self, upload_id: int, limit: int = 100, offset: int = 0) -> list[Template]:
+        """An upload's templates, the most frequent first."""
+        rows = self._db.execute(
+            "SELECT * FROM templates WHERE upload_id = ? ORDER BY count DESC, id LIMIT ? OFFSET ?",
+            (upload_id, limit, offset),
+        )
+        return [self._template(row) for row in rows]
+
+    def get_template(self, upload_id: int, template_id: str) -> Template | None:
+        row = self._db.execute(
+            "SELECT * FROM templates WHERE upload_id = ? AND id = ?", (upload_id, template_id)
+        ).fetchone()
+        return self._template(row) if row else None
+
+    def count_templates(self, upload_id: int) -> int:
+        return self._scalar("SELECT COUNT(*) FROM templates WHERE upload_id = ?", (upload_id,))
+
+    def iter_template_sequence(
+        self, upload_id: int
+    ) -> Iterator[tuple[str | None, str, datetime, int]]:
+        """(host, template id, time, event id) for every templated event, grouped by host
+        and template and in time order within each group. Used to find repeats."""
+        rows = self._db.execute(
+            "SELECT host, template_id, ts, id FROM events "
+            "WHERE upload_id = ? AND template_id IS NOT NULL AND ts IS NOT NULL "
+            "ORDER BY template_id, host, ts, line_no",
+            (upload_id,),
+        )
+        for host, template_id, micros, event_id in rows:
+            yield host, template_id, _from_micros(micros), event_id
+
+    def get_event(self, event_id: int) -> Event | None:
+        row = self._db.execute(f"{_SELECT_EVENT} WHERE e.id = ?", (event_id,)).fetchone()
+        return self._event(row) if row else None
+
+    @staticmethod
+    def _template(row: sqlite3.Row) -> Template:
+        return Template(
+            id=row["id"],
+            source_type=row["source_type"],
+            event_key=row["event_key"],
+            pattern=row["pattern"],
+            count=row["count"],
+            first_seen=_from_micros(row["first_seen"]),
+            last_seen=_from_micros(row["last_seen"]),
+            hosts=tuple(json.loads(row["hosts"])),
+            examples=tuple(json.loads(row["examples"])),
+        )
 
     @staticmethod
     def _event(row: sqlite3.Row) -> Event:

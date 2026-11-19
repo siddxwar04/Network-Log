@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6",
+    "drain3>=0.9.11",
 ]
 
 [project.optional-dependencies]
@@ -21,6 +22,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["backend"]
 include = ["netlog*"]
+
+[tool.setuptools.package-data]
+netlog = ["config/*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests", "generator/tests"]

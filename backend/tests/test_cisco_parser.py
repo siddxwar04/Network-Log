@@ -81,7 +81,11 @@ def test_truncated_cisco_line_is_partial():
     assert event.event_key == "LINK-3-UPDOWN"
 
 
-@pytest.mark.parametrize("path", sorted(SCENARIOS.glob("*.log")), ids=lambda p: p.name)
+# The 50,000-line file is covered once, by the classification test for all parsers.
+SMALL_SCENARIOS = sorted(p for p in SCENARIOS.glob("*.log") if "50k" not in p.name)
+
+
+@pytest.mark.parametrize("path", SMALL_SCENARIOS, ids=lambda p: p.name)
 def test_scenario_cisco_lines_are_fully_understood(path):
     coverage = Coverage()
     for event in parse_file(path, year=2026, coverage=coverage):

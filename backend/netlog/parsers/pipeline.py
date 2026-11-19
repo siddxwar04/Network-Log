@@ -10,10 +10,23 @@ from datetime import UTC, tzinfo
 from pathlib import Path
 
 from netlog.ingestion.reader import DEFAULT_MAX_LINE_LENGTH, RawLine, read_lines
-from netlog.parsers import dhcp, linux_auth
+from netlog.parsers import cisco, dhcp, linux_auth
 from netlog.parsers.cisco import CiscoParser
+from netlog.parsers.patterns import Span
 from netlog.parsers.syslog import SyslogParser
-from netlog.schema import Event, ParseStatus
+from netlog.schema import Event, ParseStatus, SourceType
+
+
+def free_text_spans(event: Event) -> list[Span]:
+    """Where an event's message holds text chosen by a person or a client: a username or
+    a DHCP hostname. Returned as (start, end, placeholder), for masking in templates."""
+    if event.source_type is SourceType.CISCO_IOS:
+        return cisco.spans(event)
+    if event.source_type is SourceType.LINUX_AUTH:
+        return linux_auth.spans(event)
+    if event.source_type is SourceType.DHCP:
+        return dhcp.spans(event)
+    return []
 
 
 def line_shape(text: str) -> str:

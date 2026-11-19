@@ -1,0 +1,52 @@
+# Default settings. To change one, copy the section you need into your own file and
+# point the NETLOG_CONFIG environment variable at it. Your file only has to contain the
+# values you want to change; everything else keeps the default from here.
+
+[mining]
+# How alike two messages must be to share a template, from 0 to 1. Lower merges more.
+similarity_threshold = 0.4
+# How many leading words Drain uses to sort messages before comparing them.
+depth = 4
+max_children = 100
+# How many example events to keep per template.
+max_examples = 3
+
+# Values replaced by a placeholder before mining, so that two messages differing only in
+# an address or an interface share a template. Applied in order: put the most specific
+# patterns first, because a later pattern only sees what the earlier ones left.
+[[mining.masks]]
+name = "MAC"
+pattern = '\b(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}\b|\b[0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\b'
+
+[[mining.masks]]
+name = "KEY"
+pattern = '\b(?:SHA256|MD5):[A-Za-z0-9+/=:]+'
+
+[[mining.masks]]
+name = "TIME"
+pattern = '\b\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\b'
+
+[[mining.masks]]
+name = "IP"
+pattern = '(?<![\w:])(?:[0-9a-fA-F]{1,4}:)+:(?:[0-9a-fA-F]{1,4}:)*[0-9a-fA-F]{1,4}(?:/\d{1,3})?(?![\w:])|(?<![\w:])(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}(?![\w:])'
+
+[[mining.masks]]
+name = "IP"
+pattern = '\b\d{1,3}(?:\.\d{1,3}){3}(?:/\d{1,2})?\b'
+
+[[mining.masks]]
+name = "IF"
+pattern = '\b(?:GigabitEthernet|FastEthernet|TenGigabitEthernet|TwentyFiveGigE|FortyGigabitEthernet|HundredGigE|Ethernet|Loopback|Port-channel|Vlan|Serial|Tunnel|Gi|Fa|Te|Tw|Fo|Hu|Et|Po|Vl|Lo|Se|Tu|eth|ens|eno|wlan)\d+(?:[/.:]\d+)*\b'
+
+[[mining.masks]]
+name = "HEX"
+pattern = '\b0x[0-9a-fA-F]+\b'
+
+[[mining.masks]]
+name = "NUM"
+pattern = '\b\d+\b'
+
+[dedup]
+# Repeats of one template on one device are counted as a single run while each repeat
+# comes within this many seconds of the one before.
+max_gap_seconds = 60
