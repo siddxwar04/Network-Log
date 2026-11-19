@@ -1,0 +1,507 @@
+"""SQLite storage for uploads, raw lines, events and templates.
+
+Nothing outside this module writes SQL. Every value that comes from a log line reaches
+the database as a bound parameter, never as part of the SQL text; the only names placed
+into SQL are column names taken from the fixed lists in this file.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sqlite3
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from itertools import islice
+from pathlib import Path
+
+from netlog.schema import Entities, Event, ParseStatus, Severity, SourceType
+
+DEFAULT_DB_PATH = "data/netlog.db"
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+# Entity fields stored as their own columns, so rules can filter and group on them.
+ENTITY_COLUMNS = (
+    "interface",
+    "src_ip",
+    "dst_ip",
+    "neighbor_ip",
+    "username",
+    "mac",
+    "vlan",
+    "protocol",
+    "port",
+    "state_from",
+    "state_to",
+    "reason",
+)
+GROUP_COLUMNS = ("host", "source_type", "app", "severity", "event_key", "parse_status") + (
+    ENTITY_COLUMNS
+)
+
+# One entry per schema version. To change the schema, append a new entry; never edit an
+# old one, or existing databases will not be upgraded.
+_MIGRATIONS = (
+    """
+    CREATE TABLE uploads (
+        id          INTEGER PRIMARY KEY,
+        filename    TEXT NOT NULL,
+        size_bytes  INTEGER NOT NULL DEFAULT 0,
+        status      TEXT NOT NULL DEFAULT 'processing',
+        error       TEXT,
+        line_count  INTEGER NOT NULL DEFAULT 0,
+        parsed      INTEGER NOT NULL DEFAULT 0,
+        partial     INTEGER NOT NULL DEFAULT 0,
+        unparsed    INTEGER NOT NULL DEFAULT 0,
+        blank       INTEGER NOT NULL DEFAULT 0,
+        classified  INTEGER NOT NULL DEFAULT 0,
+        created_at  INTEGER NOT NULL,
+        finished_at INTEGER
+    );
+
+    CREATE TABLE raw_lines (
+        upload_id INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+        line_no   INTEGER NOT NULL,
+        text      TEXT NOT NULL,
+        PRIMARY KEY (upload_id, line_no)
+    ) WITHOUT ROWID;
+
+    CREATE TABLE events (
+        id           INTEGER PRIMARY KEY,
+        upload_id    INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+        line_no      INTEGER NOT NULL,
+        ts           INTEGER,
+        year_assumed INTEGER NOT NULL,
+        tz_assumed   INTEGER NOT NULL,
+        host         TEXT,
+        source_type  TEXT NOT NULL,
+        app          TEXT,
+        facility     INTEGER,
+        severity     INTEGER,
+        event_key    TEXT,
+        message      TEXT NOT NULL,
+        parse_status TEXT NOT NULL,
+        template_id  TEXT,
+        interface    TEXT,
+        src_ip       TEXT,
+        dst_ip       TEXT,
+        neighbor_ip  TEXT,
+        username     TEXT,
+        mac          TEXT,
+        vlan         INTEGER,
+        protocol     TEXT,
+        port         INTEGER,
+        state_from   TEXT,
+        state_to     TEXT,
+        reason       TEXT,
+        extra        TEXT NOT NULL
+    );
+    CREATE INDEX events_by_time      ON events (upload_id, ts);
+    CREATE INDEX events_by_key       ON events (upload_id, event_key, ts);
+    CREATE INDEX events_by_host      ON events (upload_id, host, ts);
+    CREATE INDEX events_by_src_ip    ON events (upload_id, src_ip, ts);
+    CREATE INDEX events_by_interface ON events (upload_id, interface, ts);
+
+    CREATE VIRTUAL TABLE events_fts USING fts5(
+        message, event_key, host, app, content='events', content_rowid='id'
+    );
+    CREATE TRIGGER events_fts_delete AFTER DELETE ON events BEGIN
+        INSERT INTO events_fts (events_fts, rowid, message, event_key, host, app)
+        VALUES ('delete', old.id, old.message, old.event_key, old.host, old.app);
+    END;
+
+    CREATE TABLE templates (
+        upload_id   INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+        id          TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        event_key   TEXT,
+        pattern     TEXT NOT NULL,
+        count       INTEGER NOT NULL,
+        first_seen  INTEGER,
+        last_seen   INTEGER,
+        hosts       TEXT NOT NULL,
+        examples    TEXT NOT NULL,
+        PRIMARY KEY (upload_id, id)
+    ) WITHOUT ROWID;
+    """,
+)
+SCHEMA_VERSION = len(_MIGRATIONS)
+
+_EVENT_COLUMNS = (
+    "upload_id",
+    "line_no",
+    "ts",
+    "year_assumed",
+    "tz_assumed",
+    "host",
+    "source_type",
+    "app",
+    "facility",
+    "severity",
+    "event_key",
+    "message",
+    "parse_status",
+    "template_id",
+    *ENTITY_COLUMNS,
+    "extra",
+)
+_INSERT_EVENT = (
+    f"INSERT INTO events ({', '.join(_EVENT_COLUMNS)}) "
+    f"VALUES ({', '.join('?' * len(_EVENT_COLUMNS))})"
+)
+_SELECT_EVENT = (
+    "SELECT e.*, r.text AS raw FROM events e "
+    "JOIN raw_lines r ON r.upload_id = e.upload_id AND r.line_no = e.line_no"
+)
+
+
+def default_db_path() -> str:
+    return os.environ.get("NETLOG_DB_PATH", DEFAULT_DB_PATH)
+
+
+def _to_micros(moment: datetime | None) -> int | None:
+    """Timestamps are stored as whole microseconds since 1970, in UTC."""
+    if moment is None:
+        return None
+    return (moment - _EPOCH) // timedelta(microseconds=1)
+
+
+def _from_micros(micros: int | None) -> datetime | None:
+    return None if micros is None else _EPOCH + timedelta(microseconds=micros)
+
+
+@dataclass(frozen=True)
+class Upload:
+    id: int
+    filename: str
+    size_bytes: int
+    status: str
+    error: str | None
+    line_count: int
+    parsed: int
+    partial: int
+    unparsed: int
+    blank: int
+    classified: int
+    created_at: datetime
+    finished_at: datetime | None
+
+    @property
+    def percent_parsed(self) -> float:
+        return 100.0 * self.parsed / self.line_count if self.line_count else 0.0
+
+
+@dataclass
+class EventFilter:
+    """Which events to return. Every condition given must hold."""
+
+    start: datetime | None = None  # at or after
+    end: datetime | None = None  # strictly before
+    host: str | None = None
+    source_type: str | None = None
+    parse_status: str | None = None
+    # "At or above" in seriousness: 3 returns severities 0 to 3 (error and worse).
+    min_severity: int | None = None
+    event_keys: tuple[str, ...] | list[str] = ()
+    # Entity values that must match exactly, for example {"src_ip": "192.0.2.77"}.
+    entities: dict[str, str | int] = field(default_factory=dict)
+    # Words that must all appear in the message, event key, host or program name.
+    text: str | None = None
+
+    def to_sql(self, upload_id: int) -> tuple[str, list]:
+        clauses, params = ["e.upload_id = ?"], [upload_id]
+
+        def add(clause: str, *values) -> None:
+            clauses.append(clause)
+            params.extend(values)
+
+        if self.start is not None:
+            add("e.ts >= ?", _to_micros(self.start))
+        if self.end is not None:
+            add("e.ts < ?", _to_micros(self.end))
+        if self.host is not None:
+            add("e.host = ?", self.host)
+        if self.source_type is not None:
+            add("e.source_type = ?", str(self.source_type))
+        if self.parse_status is not None:
+            add("e.parse_status = ?", str(self.parse_status))
+        if self.min_severity is not None:
+            add("e.severity <= ?", int(self.min_severity))
+        if self.event_keys:
+            marks = ", ".join("?" * len(self.event_keys))
+            add(f"e.event_key IN ({marks})", *self.event_keys)
+        for column, value in self.entities.items():
+            if column not in ENTITY_COLUMNS:
+                raise ValueError(f"not an entity field: {column!r}")
+            add(f"e.{column} = ?", value)
+        if self.text is not None:
+            add("e.id IN (SELECT rowid FROM events_fts WHERE events_fts MATCH ?)", _fts(self.text))
+        return " AND ".join(clauses), params
+
+
+def _fts(text: str) -> str:
+    """Turn free text into a full-text query for "all of these words".
+
+    Each word is quoted, so nothing the user types is read as search syntax.
+    """
+    words = re.findall(r"\w+", text)
+    return " ".join(f'"{word}"' for word in words) if words else '""'
+
+
+class Database:
+    def __init__(self, path: str | Path | None = None) -> None:
+        path = Path(path if path is not None else default_db_path())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._db = sqlite3.connect(path)
+        self._db.row_factory = sqlite3.Row
+        self._db.execute("PRAGMA journal_mode = WAL")
+        self._db.execute("PRAGMA synchronous = NORMAL")
+        self._db.execute("PRAGMA foreign_keys = ON")
+        self._migrate()
+
+    def close(self) -> None:
+        self._db.close()
+
+    def __enter__(self) -> Database:
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self.close()
+
+    def _migrate(self) -> None:
+        version = self._db.execute("PRAGMA user_version").fetchone()[0]
+        if version > SCHEMA_VERSION:
+            raise RuntimeError(
+                f"database is at schema version {version}, but this program only knows "
+                f"version {SCHEMA_VERSION}; it was created by a newer release"
+            )
+        for number in range(version, SCHEMA_VERSION):
+            self._db.executescript(f"BEGIN; {_MIGRATIONS[number]} COMMIT;")
+            self._db.execute(f"PRAGMA user_version = {number + 1}")
+
+    @property
+    def schema_version(self) -> int:
+        return self._scalar("PRAGMA user_version")
+
+    def _scalar(self, sql: str, params: Iterable = ()):
+        return self._db.execute(sql, tuple(params)).fetchone()[0]
+
+    # --- Uploads --------------------------------------------------------------------------
+
+    def create_upload(self, filename: str, size_bytes: int = 0) -> int:
+        with self._db:
+            cursor = self._db.execute(
+                "INSERT INTO uploads (filename, size_bytes, created_at) VALUES (?, ?, ?)",
+                (filename, size_bytes, _to_micros(datetime.now(UTC))),
+            )
+        return cursor.lastrowid
+
+    def finish_upload(self, upload_id: int, coverage) -> None:
+        """Record the parse coverage of an upload and mark it as done."""
+        with self._db:
+            self._db.execute(
+                "UPDATE uploads SET status = 'done', finished_at = ?, line_count = ?, parsed = ?, "
+                "partial = ?, unparsed = ?, blank = ?, classified = ? WHERE id = ?",
+                (
+                    _to_micros(datetime.now(UTC)),
+                    coverage.total,
+                    coverage.parsed,
+                    coverage.partial,
+                    coverage.unparsed,
+                    coverage.blank,
+                    coverage.classified,
+                    upload_id,
+                ),
+            )
+
+    def fail_upload(self, upload_id: int, error: str) -> None:
+        with self._db:
+            self._db.execute(
+                "UPDATE uploads SET status = 'failed', error = ?, finished_at = ? WHERE id = ?",
+                (error, _to_micros(datetime.now(UTC)), upload_id),
+            )
+
+    def get_upload(self, upload_id: int) -> Upload | None:
+        row = self._db.execute("SELECT * FROM uploads WHERE id = ?", (upload_id,)).fetchone()
+        return self._upload(row) if row else None
+
+    def list_uploads(self, limit: int = 50, offset: int = 0) -> list[Upload]:
+        rows = self._db.execute(
+            "SELECT * FROM uploads ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset)
+        )
+        return [self._upload(row) for row in rows]
+
+    def delete_upload(self, upload_id: int) -> bool:
+        """Delete an upload and everything that belongs to it."""
+        with self._db:
+            cursor = self._db.execute("DELETE FROM uploads WHERE id = ?", (upload_id,))
+        return cursor.rowcount > 0
+
+    @staticmethod
+    def _upload(row: sqlite3.Row) -> Upload:
+        values = dict(row)
+        values["created_at"] = _from_micros(values["created_at"])
+        values["finished_at"] = _from_micros(values["finished_at"])
+        return Upload(**values)
+
+    # --- Writing events -------------------------------------------------------------------
+
+    def add_events(self, upload_id: int, events: Iterable[Event], batch_size: int = 5000) -> int:
+        """Store events and their raw lines. Returns how many were stored."""
+        stored = 0
+        iterator = iter(events)
+        while batch := list(islice(iterator, batch_size)):
+            with self._db:
+                last_old = self._scalar("SELECT COALESCE(MAX(id), 0) FROM events")
+                self._db.executemany(
+                    "INSERT INTO raw_lines (upload_id, line_no, text) VALUES (?, ?, ?)",
+                    ((upload_id, e.line_no, e.raw) for e in batch),
+                )
+                self._db.executemany(_INSERT_EVENT, (self._row(upload_id, e) for e in batch))
+                # Index the new messages for full-text search in one statement per batch.
+                self._db.execute(
+                    "INSERT INTO events_fts (rowid, message, event_key, host, app) "
+                    "SELECT id, message, event_key, host, app FROM events WHERE id > ?",
+                    (last_old,),
+                )
+            stored += len(batch)
+        return stored
+
+    @staticmethod
+    def _row(upload_id: int, event: Event) -> tuple:
+        entities = event.entities
+        return (
+            upload_id,
+            event.line_no,
+            _to_micros(event.timestamp),
+            event.year_assumed,
+            event.tz_assumed,
+            event.host,
+            str(event.source_type),
+            event.app,
+            event.facility,
+            None if event.severity is None else int(event.severity),
+            event.event_key,
+            event.message,
+            str(event.parse_status),
+            event.template_id,
+            *(getattr(entities, column) for column in ENTITY_COLUMNS),
+            json.dumps(entities.extra, ensure_ascii=False),
+        )
+
+    # --- Reading events -------------------------------------------------------------------
+
+    def events(
+        self,
+        upload_id: int,
+        where: EventFilter | None = None,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        newest_first: bool = False,
+    ) -> list[Event]:
+        """One page of matching events, in time order. Events with no time come first."""
+        clause, params = (where or EventFilter()).to_sql(upload_id)
+        direction = "DESC" if newest_first else "ASC"
+        rows = self._db.execute(
+            f"{_SELECT_EVENT} WHERE {clause} "
+            f"ORDER BY e.ts {direction}, e.line_no {direction} LIMIT ? OFFSET ?",
+            (*params, limit, offset),
+        )
+        return [self._event(row) for row in rows]
+
+    def iter_events(self, upload_id: int, where: EventFilter | None = None) -> Iterator[Event]:
+        """Every matching event in time order, without paging. For detection rules."""
+        clause, params = (where or EventFilter()).to_sql(upload_id)
+        rows = self._db.execute(
+            f"{_SELECT_EVENT} WHERE {clause} ORDER BY e.ts, e.line_no", params
+        )
+        for row in rows:
+            yield self._event(row)
+
+    def count_events(self, upload_id: int, where: EventFilter | None = None) -> int:
+        clause, params = (where or EventFilter()).to_sql(upload_id)
+        return self._scalar(f"SELECT COUNT(*) FROM events e WHERE {clause}", params)
+
+    def count_by(
+        self, upload_id: int, column: str, where: EventFilter | None = None, limit: int = 100
+    ) -> list[tuple[str | int | None, int]]:
+        """How many matching events there are per value of `column`, most common first."""
+        if column not in GROUP_COLUMNS:
+            raise ValueError(f"cannot group by {column!r}")
+        clause, params = (where or EventFilter()).to_sql(upload_id)
+        rows = self._db.execute(
+            f"SELECT e.{column}, COUNT(*) AS n FROM events e WHERE {clause} "
+            f"GROUP BY e.{column} ORDER BY n DESC, e.{column} LIMIT ?",
+            (*params, limit),
+        )
+        return [(row[0], row[1]) for row in rows]
+
+    def histogram(
+        self, upload_id: int, bucket_seconds: int, where: EventFilter | None = None
+    ) -> list[tuple[datetime, int]]:
+        """Matching events counted per time bucket. Buckets with no events are left out."""
+        if bucket_seconds <= 0:
+            raise ValueError("bucket_seconds must be positive")
+        clause, params = (where or EventFilter()).to_sql(upload_id)
+        size = bucket_seconds * 1_000_000
+        rows = self._db.execute(
+            f"SELECT (e.ts / ?) * ? AS bucket, COUNT(*) FROM events e "
+            f"WHERE {clause} AND e.ts IS NOT NULL GROUP BY bucket ORDER BY bucket",
+            (size, size, *params),
+        )
+        return [(_from_micros(row[0]), row[1]) for row in rows]
+
+    def time_range(self, upload_id: int) -> tuple[datetime, datetime] | None:
+        """The earliest and latest event time of an upload."""
+        row = self._db.execute(
+            "SELECT MIN(ts), MAX(ts) FROM events WHERE upload_id = ?", (upload_id,)
+        ).fetchone()
+        return None if row[0] is None else (_from_micros(row[0]), _from_micros(row[1]))
+
+    def raw_line(self, upload_id: int, line_no: int) -> str | None:
+        row = self._db.execute(
+            "SELECT text FROM raw_lines WHERE upload_id = ? AND line_no = ?", (upload_id, line_no)
+        ).fetchone()
+        return row[0] if row else None
+
+    def context(
+        self, upload_id: int, line_no: int, before: int = 3, after: int = 3
+    ) -> list[tuple[int, str]]:
+        """A line and its neighbors in the original file, as (line number, text)."""
+        rows = self._db.execute(
+            "SELECT line_no, text FROM raw_lines WHERE upload_id = ? AND line_no BETWEEN ? AND ? "
+            "ORDER BY line_no",
+            (upload_id, line_no - before, line_no + after),
+        )
+        return [(row[0], row[1]) for row in rows]
+
+    @staticmethod
+    def _event(row: sqlite3.Row) -> Event:
+        # Rows were validated when they were written, so they are rebuilt without
+        # validating again; this is several times faster when reading many events.
+        entities = Entities.model_construct(
+            **{column: row[column] for column in ENTITY_COLUMNS}, extra=json.loads(row["extra"])
+        )
+        severity = row["severity"]
+        return Event.model_construct(
+            id=row["id"],
+            upload_id=row["upload_id"],
+            line_no=row["line_no"],
+            raw=row["raw"],
+            timestamp=_from_micros(row["ts"]),
+            year_assumed=bool(row["year_assumed"]),
+            tz_assumed=bool(row["tz_assumed"]),
+            host=row["host"],
+            source_type=SourceType(row["source_type"]),
+            app=row["app"],
+            facility=row["facility"],
+            severity=None if severity is None else Severity(severity),
+            event_key=row["event_key"],
+            message=row["message"],
+            entities=entities,
+            parse_status=ParseStatus(row["parse_status"]),
+            template_id=row["template_id"],
+        )
