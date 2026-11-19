@@ -508,6 +508,15 @@ class Database:
         ).fetchone()
         return None if row[0] is None else (_from_micros(row[0]), _from_micros(row[1]))
 
+    def count_assumed(self, upload_id: int) -> tuple[int, int]:
+        """How many events had their year assumed, and how many their timezone."""
+        row = self._db.execute(
+            "SELECT COALESCE(SUM(year_assumed), 0), COALESCE(SUM(tz_assumed), 0) "
+            "FROM events WHERE upload_id = ?",
+            (upload_id,),
+        ).fetchone()
+        return row[0], row[1]
+
     def raw_line(self, upload_id: int, line_no: int) -> str | None:
         row = self._db.execute(
             "SELECT text FROM raw_lines WHERE upload_id = ? AND line_no = ?", (upload_id, line_no)

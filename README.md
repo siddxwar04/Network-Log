@@ -2,7 +2,7 @@
 
 Reads network logs, finds the incidents in them, and explains what happened in plain English, with every statement linked to the log lines that prove it.
 
-> **Status: early development.** The foundations are built and tested. Detection, correlation, explanations and the web interface are still to come. See [Progress](#progress) for exactly what works today.
+> **Status: in development.** The command-line analyzer works: it reads a log file, detects problems with 12 rules and prints a report. Grouping findings into incidents, plain-English explanations and the web interface are still to come. See [Progress](#progress) for exactly what works today.
 
 ## The problem
 
@@ -70,10 +70,11 @@ Two design rules shape the project:
 | Event schema | One standard shape for every log line | Done |
 | Test log generator | Realistic logs with known incidents and an answer key | Done |
 | File reading and syslog parsing | Time and device from every line, RFC 3164 and RFC 5424 | Done |
-| Vendor parsing | Cisco IOS, Linux auth, DHCP message content | Next |
-| Storage and template mining | Searchable database, pattern extraction | Planned |
-| Detection rules and severity | The incident detectors | Planned |
-| Correlation | Grouping, causal chain, root cause | Planned |
+| Vendor parsing | Cisco IOS, Linux auth, DHCP message content | Done |
+| Storage and template mining | Searchable database, pattern extraction | Done |
+| Detection rules and severity | 12 rules, each finding with a severity and a reason | Done |
+| Command-line tool | One command, a report in text, Markdown or JSON | Done |
+| Correlation | Grouping, causal chain, root cause | Next |
 | AI explanation | Cited explanations with a validator | Planned |
 | Web interface | Dashboard, incident page, timeline | Planned |
 | Live syslog and alerts | Real-time intake, chat notifications | Planned |
@@ -81,12 +82,33 @@ Two design rules shape the project:
 
 ### What works today
 
-- **Reads log files of any size** line by line, in UTF-8 or UTF-16, with Windows or Unix line endings. Binary files are rejected, and oversized lines are cut safely.
-- **Parses both syslog formats.** Classic syslog lines carry no year and no timezone, so both are assumed and each event records that. A log that runs from December into January is read as crossing into the next year.
+- **One command analyzes a file.** `netlog analyze router.log` prints what was found, most severe first, with the log lines that prove it. It runs fully offline.
+- **Understands Cisco IOS, Linux sshd and sudo, and ISC dhcpd** on top of both syslog formats. Classic syslog lines carry no year and no timezone, so both are assumed and the report says so.
+- **Detects 12 kinds of problem:** flapping and failed interfaces, BGP and OSPF drops, DHCP exhaustion, brute-force logins, config changes, CPU and memory trouble, reloads and MAC flapping. Rules are plain settings in a file, not code.
+- **Gives every finding a severity and a reason.** 300 failed logins that all fail are Medium; the same attack ending in one successful login is Critical.
+- **Collapses noise.** A 50,000-line file reduces to 28 message patterns.
 - **Never drops a line.** A line no parser understands is kept and counted, and the tool reports what share of the file it understood.
-- **Generates test logs with an answer key.** Eight scenarios on a simulated network of four routers, two switches and two servers.
+- **Treats log content as untrusted.** A username such as `admin from 10.0.0.1 port 22` does not fool the parsers, and a log line cannot inject formatting into a report.
 
-All nine sample log files parse at 100% for time and device. The 50,000-line file takes about 1.4 seconds.
+On the sample logs, each scenario's problem is found with the right device, counts and severity, and the two files with no incident produce no findings above Info. These are generated logs; see [Limitations](#limitations).
+
+Here is the report for a log with a successful brute-force attack hidden in 5,000 lines:
+
+```
+Verdict
+  1 finding: 1 critical
+
+Findings
+  [CRITICAL] 400 failed logins from 192.0.2.77 in 11m 55s
+      When      2026-03-03 03:22:22 to 03:34:17 UTC (11m 55s)
+      Why       Critical: password guessing is common and usually fails; raised from medium because
+                a login from the same address succeeded afterwards, so a password was probably
+                guessed.
+      Detail    logged in as: deploy
+      Detail    usernames tried: 9
+      Detail    noted: password spraying, succeeded
+      Evidence  401 line(s) (showing 5)
+```
 
 ## Getting started
 
@@ -98,6 +120,21 @@ cd Network-Log
 python -m venv .venv
 .venv\Scripts\python -m pip install -e ".[dev]"
 ```
+
+Analyze one of the sample logs:
+
+```powershell
+.venv\Scripts\netlog analyze data\scenarios\04_brute_force.log --year 2026
+```
+
+Then try your own file, or other options:
+
+```powershell
+.venv\Scripts\netlog analyze router.log --min-severity high
+.venv\Scripts\netlog analyze router.log --format markdown -o report.md
+```
+
+See [docs/CLI.md](docs/CLI.md) for every option, the exit codes and the JSON format.
 
 Run the tests:
 
@@ -111,9 +148,7 @@ Generate a fresh test log:
 .venv\Scripts\python -m generator --scenario cascade --seed 5 --out data/tmp
 ```
 
-On Linux or macOS, use `.venv/bin/python` in place of `.venv\Scripts\python`.
-
-There is no command-line tool or web interface yet. Today the project is the parsing library, the generator and their tests.
+On Linux or macOS, use `.venv/bin/` in place of `.venv\Scripts\`.
 
 ## Sample logs
 
@@ -139,15 +174,18 @@ See [generator/README.md](generator/README.md) for the simulated network, the li
 ```
 backend/
   netlog/
+    cli.py           the netlog command
     schema.py        the normalized event
     ingestion/       reading files
-    parsers/         syslog parsing and parse coverage
-    mining/          template mining          (planned)
-    detection/       rules and severity       (planned)
+    parsers/         syslog, Cisco IOS, Linux auth and DHCP parsers
+    storage/         SQLite database
+    mining/          template mining and dedup
+    detection/       rule engine and severity
+    config/          default settings and the built-in rules
+    report/          text, Markdown and JSON reports
     correlation/     incidents and root cause (planned)
     llm/             explanations             (planned)
     redaction/       hiding addresses and names before they leave the machine (planned)
-    storage/         database                 (planned)
     api/             web API                  (planned)
   tests/
 generator/           test log generator
@@ -158,15 +196,19 @@ frontend/            web interface            (planned)
 
 ## Documentation
 
+- [docs/CLI.md](docs/CLI.md): the command, its options, exit codes and JSON output.
+- [docs/RULES.md](docs/RULES.md): every detection rule, with its log signature, thresholds, severity and usual causes.
 - [docs/SCHEMA.md](docs/SCHEMA.md): every field of the normalized event, with worked examples.
 - [generator/README.md](generator/README.md): the test log generator.
 
 ## Limitations
 
-- **Early stage.** No incidents are detected yet.
-- **Tested on generated logs only.** The sample logs follow real Cisco IOS, OpenSSH and ISC dhcpd formats, but they come from this project's own generator. Testing on logs from real devices is planned.
+- **Findings are not grouped yet.** A failed link that takes down routing on three routers is reported as its separate findings, not as one incident with a root cause. That is the next stage.
+- **Tested on generated logs only.** The sample logs follow real Cisco IOS, OpenSSH and ISC dhcpd formats, but they come from this project's own generator, so the results show the tool is consistent with its design, not that it works on every network. Testing on logs from real devices is planned.
+- **No knowledge of your network.** The tool cannot tell a core uplink from a desk port unless you list what is critical in the settings. An interface going down is therefore Info by default.
 - **Cisco IOS first.** Other vendors will follow once the pipeline is complete.
+- **A file at a time.** There is no live syslog intake yet.
 
 ## Tech stack
 
-Python, pydantic, pytest and ruff today. Planned: FastAPI, SQLite and Drain3 for the backend, and React with Vite and Tailwind for the web interface.
+Python with pydantic, SQLite, Drain3, pytest and ruff. Planned: FastAPI for the web API, and React with Vite and Tailwind for the web interface.

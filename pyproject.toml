@@ -13,6 +13,9 @@ dependencies = [
     "drain3>=0.9.11",
 ]
 
+[project.scripts]
+netlog = "netlog.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
