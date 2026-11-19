@@ -2,7 +2,7 @@
 
 Reads network logs, finds the incidents in them, and explains what happened in plain English, with every statement linked to the log lines that prove it.
 
-> **Status: in development.** The command-line analyzer works: it reads a log file, detects problems with 12 rules and prints a report. Grouping findings into incidents, plain-English explanations and the web interface are still to come. See [Progress](#progress) for exactly what works today.
+> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents and names a likely root cause for each. Plain-English explanations and the web interface are still to come. See [Progress](#progress) for exactly what works today.
 
 ## The problem
 
@@ -23,7 +23,7 @@ Each part of that answer links to the log lines behind it.
 | Understand network logs | Cisco IOS, Linux authentication and DHCP to start with | Works |
 | Detect problems with rules, not guesswork | Link flaps, routing drops, brute-force logins, DHCP exhaustion and more | Works |
 | Say how serious each one is, and why | A fixed, testable severity with a one-line reason | Works |
-| Group related alerts | One failed link that takes down OSPF and BGP on three routers becomes one incident with one root cause | Next |
+| Group related alerts | One failed link that takes down OSPF and BGP on three routers becomes one incident with one root cause | Works |
 | Explain in plain English | An AI model writes the explanation, but only from evidence the rules already found | Planned |
 | Work without the AI | Detection, grouping and reports run fully offline | Works for everything built so far |
 
@@ -49,7 +49,7 @@ Each part of that answer links to the log lines behind it.
     |
     v
  +---------------------+
- | Correlate           |   related findings become one incident with a cause     next
+ | Correlate           |   related findings become one incident with a cause     built
  +---------------------+
     |
     v
@@ -77,8 +77,8 @@ Two design rules shape the project:
 | Storage and template mining | Searchable database, pattern extraction | Done |
 | Detection rules and severity | 12 rules, each finding with a severity and a reason | Done |
 | Command-line tool | One command, a report in text, Markdown or JSON | Done |
-| Correlation | Grouping, causal chain, root cause | Next |
-| AI explanation | Cited explanations with a validator | Planned |
+| Correlation | Grouping, causal chain, root cause, confidence | Done |
+| AI explanation | Cited explanations with a validator | Next |
 | Web interface | Dashboard, incident page, timeline | Planned |
 | Live syslog and alerts | Real-time intake, chat notifications | Planned |
 | Evaluation | Measured accuracy on labelled logs | Planned |
@@ -89,28 +89,43 @@ Two design rules shape the project:
 - **Understands Cisco IOS, Linux sshd and sudo, and ISC dhcpd** on top of both syslog formats. Classic syslog lines carry no year and no timezone, so both are assumed and the report says so.
 - **Detects 12 kinds of problem:** flapping and failed interfaces, BGP and OSPF drops, DHCP exhaustion, brute-force logins, config changes, CPU and memory trouble, reloads and MAC flapping. Rules are plain settings in a file, not code.
 - **Gives every finding a severity and a reason.** 300 failed logins that all fail are Medium; the same attack ending in one successful login is Critical.
+- **Groups findings into incidents.** Twelve alerts from four routers become one incident. Findings are joined only when they are close in time and connected; an attack and a link fault in the same minute stay separate.
+- **Names a likely root cause, with a confidence level.** It orders each incident into cause and effect using what is known about how protocols fail, and it lists what the logs cannot tell. A configuration change shortly before a failure is shown as a suspect, never as proven.
+- **Works out who is who from the logs.** Logs never say which address belongs to which router. The tool infers it from adjacency messages, and leaves unknown what it cannot establish.
 - **Collapses noise.** A 50,000-line file reduces to 28 message patterns.
 - **Never drops a line.** A line no parser understands is kept and counted, and the tool reports what share of the file it understood.
 - **Treats log content as untrusted.** A username such as `admin from 10.0.0.1 port 22` does not fool the parsers, and a log line cannot inject formatting into a report.
 
-On the sample logs, each scenario's problem is found with the right device, counts and severity, and the two files with no incident produce no findings above Info. These are generated logs; see [Limitations](#limitations).
+On the sample logs, all nine files give the expected incidents with the right root cause, severity and devices when the tool is given the network's topology. From the logs alone, eight of nine match: in the ninth the root cause is right, but a neighboring router is not connected to the incident, because nothing in the logs says the two devices are cabled together and the tool does not guess. These are generated logs; see [Limitations](#limitations).
 
-Here is the report for a log with a successful brute-force attack hidden in 5,000 lines:
+Here is the report for a log where one failed interface, hidden in 5,000 lines, took down routing on four routers (evidence lines shortened):
 
 ```
 Verdict
-  1 finding: 1 critical
+  1 incident: 1 critical (12 findings on 4 devices)
 
-Findings
-  [CRITICAL] 400 failed logins from 192.0.2.77 in 11m 55s
-      When      2026-03-03 03:22:22 to 03:34:17 UTC (11m 55s)
-      Why       Critical: password guessing is common and usually fails; raised from medium because
-                a login from the same address succeeded afterwards, so a password was probably
-                guessed.
-      Detail    logged in as: deploy
-      Detail    usernames tried: 9
-      Detail    noted: password spraying, succeeded
-      Evidence  401 line(s) (showing 5)
+Incidents
+  [CRITICAL] Interface GigabitEthernet0/1 on R1 was down for 8m 36s
+      When          2026-03-03 02:46:11 to 02:46:52 UTC (41s)
+      Devices       R1, R2, R3, R4
+      Findings      12 findings: 6 OSPF adjacency lost, 6 BGP session down
+      Likely cause  Interface GigabitEthernet0/1 on R1 was down for 8m 36s
+      Confidence    High: every finding is accounted for, the timing matches how the protocols
+                    behave, and 4 devices report it.
+      What happened
+        Interface GigabitEthernet0/1 on R1 was down for 8m 36s
+            2260  Mar  3 02:46:12 R1 ... %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
+           -> OSPF adjacency lost on R1 (3 findings) (at once)
+              Why: OSPF runs over that interface, so the router dropped its neighbors there the
+                   moment the interface went down.
+              -> BGP session down on R1 (3 findings) (+20s to +24s) [plausible]
+           -> BGP session down on R2, R3, R4 (+23s to +27s)
+           -> OSPF adjacency lost on R2, R3, R4 (+35s to +41s)
+              Why: The other routers stopped hearing OSPF hellos from the device whose interface
+                   failed, and gave up on it when the 40-second dead timer ran out.
+      Not known from these logs
+        - Why the interface went down. The logs show that it did, not whether a cable, an optic or
+          the device at the other end was at fault.
 ```
 
 ## What it detects
@@ -156,6 +171,13 @@ Then try your own file, or other options:
 ```powershell
 .venv\Scripts\netlog analyze router.log --min-severity high
 .venv\Scripts\netlog analyze router.log --format markdown -o report.md
+.venv\Scripts\netlog analyze data\scenarios\07_device_reload.log --year 2026 --topology data\scenarios\topology.toml
+```
+
+Check the tool against the answer keys of every sample log:
+
+```powershell
+.venv\Scripts\python -m eval.scorecard --topology data\scenarios\topology.toml
 ```
 
 See [docs/CLI.md](docs/CLI.md) for every option, the exit codes and the JSON format.
@@ -207,12 +229,13 @@ backend/
     detection/       rule engine and severity
     config/          default settings and the built-in rules
     report/          text, Markdown and JSON reports
-    correlation/     incidents and root cause (planned)
+    correlation/     incidents, topology, cause and effect
     llm/             explanations             (planned)
     redaction/       hiding addresses and names before they leave the machine (planned)
     api/             web API                  (planned)
   tests/
 generator/           test log generator
+eval/                scorecard: found against expected, for every sample log
 data/scenarios/      generated logs with label files
 docs/                reference documentation
 frontend/            web interface            (planned)
@@ -227,9 +250,10 @@ frontend/            web interface            (planned)
 
 ## Limitations
 
-- **Findings are not grouped yet.** A failed link that takes down routing on three routers is reported as its separate findings, not as one incident with a root cause. That is the next stage.
+- **A root cause is the tool's best reading of the logs, not a verdict.** It is found by applying fixed rules about what can cause what. Each incident states a confidence level and what the logs cannot tell.
+- **No free-form explanation or fix suggestions yet.** The report states what the rules established. That is the next stage.
 - **Tested on generated logs only.** The sample logs follow real Cisco IOS, OpenSSH and ISC dhcpd formats, but they come from this project's own generator, so the results show the tool is consistent with its design, not that it works on every network. Testing on logs from real devices is planned.
-- **No knowledge of your network.** The tool cannot tell a core uplink from a desk port unless you list what is critical in the settings. An interface going down is therefore Info by default.
+- **Little knowledge of your network.** The tool cannot tell a core uplink from a desk port unless you list what is critical in the settings, so an interface going down is Info on its own. It also cannot know which cable goes where; a small topology file fills that in.
 - **Cisco IOS first.** Other vendors will follow once the pipeline is complete.
 - **A file at a time.** There is no live syslog intake yet.
 

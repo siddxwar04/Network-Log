@@ -11,25 +11,35 @@
 
 ## Verdict
 
-**1 finding: 1 high**
+**1 incident: 1 high (1 finding on 1 device)**
 
-167 lower-severity findings not shown (routine events such as config changes); use --min-severity info to list them.
+167 routine findings recorded (config changes, interfaces that went down). Use --min-severity info to list them.
 
-## Findings
+## Incidents
 
 ### High: Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s
 
 - **When:** 2026-03-03 02:35:21 to 02:38:42 UTC (3m 21s)
-- **Why this severity:** High: a flapping interface repeatedly interrupts whatever is connected through it; raised from medium because it went down at least twice as often as the threshold; no critical interfaces are configured, so its importance is not known.
-- **Evidence:** 12 line(s), 5 shown
+- **Devices:** R1
+- **Findings:** 1 finding
+- **Likely cause:** Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s
+- **Confidence:** Medium: it is a single finding on one device; nothing else in these logs confirms or explains it.
+- **Severity:** High: the most serious finding is "Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s".
 
-```text
-  2083  Mar  3 02:35:20 R1 64397: Mar  3 02:35:21.630: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
-  2091  Mar  3 02:35:41 R1 64401: Mar  3 02:35:42.276: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
-  2099  Mar  3 02:35:55 R1 64405: Mar  3 02:35:56.626: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
-  2173  Mar  3 02:38:22 R1 64437: Mar  3 02:38:24.132: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
-  2186  Mar  3 02:38:41 R1 64441: Mar  3 02:38:42.356: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
-```
+**What happened**
+
+- Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s
+
+  ```text
+    2083  Mar  3 02:35:20 R1 64397: Mar  3 02:35:21.630: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
+    2091  Mar  3 02:35:41 R1 64401: Mar  3 02:35:42.276: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
+    2186  Mar  3 02:38:41 R1 64441: Mar  3 02:38:42.356: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down
+  ```
+
+
+**Not known from these logs**
+
+- Why the interface went down. The logs show that it did, not whether a cable, an optic or the device at the other end was at fault.
 
 ## Most frequent messages
 

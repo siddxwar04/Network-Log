@@ -39,9 +39,13 @@ def test_text_report_for_the_link_flap_scenario(capsys):
     assert code == EXIT_FINDINGS and err == ""
     check_golden("report_link_flap.txt", out)
     # The order a tired engineer needs: the file, the verdict, then the findings.
-    sections = [out.index(s) for s in ("File", "Verdict", "Findings", "Most frequent", "Notes")]
+    sections = [out.index(s) for s in ("File", "Verdict", "Incidents", "Most frequent", "Notes")]
     assert sections == sorted(sections)
+    assert "1 incident: 1 high (1 finding on 1 device)" in out
     assert "[HIGH] Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s" in out
+    assert "Likely cause  Interface GigabitEthernet0/2 on R1 went down 12 times" in out
+    assert "Confidence    Medium: it is a single finding on one device" in out
+    assert "Not known from these logs" in out and "- Why the interface went down." in out
     assert "\x1b[" not in out  # no color codes when the output is captured
     assert out.isascii()  # displays in any Windows console
     assert max(len(line) for line in out.splitlines()) <= 180
@@ -62,7 +66,10 @@ def test_json_report_for_the_link_flap_scenario(capsys):
     data = json.loads(out)
 
     assert code == EXIT_FINDINGS
-    assert set(data) == {"version", "file", "summary", "findings", "templates", "assumptions", "warnings"}  # noqa: E501
+    assert set(data) == {
+        "version", "file", "summary", "incidents", "findings", "templates", "assumptions",
+        "warnings",
+    }  # fmt: skip
     assert data["version"] == 1
     assert data["file"]["name"] == "01_link_flap.log"
     assert (data["file"]["lines"], data["file"]["percent_parsed"]) == (5000, 100.0)
@@ -71,13 +78,34 @@ def test_json_report_for_the_link_flap_scenario(capsys):
     ]  # fmt: skip
     assert data["summary"]["shown"] == 1 and data["summary"]["hidden"] > 100
     assert data["summary"]["by_severity"]["high"] == 1
+    assert data["summary"]["incidents"] == 1
+    assert data["summary"]["incidents_by_severity"]["high"] == 1
 
     (finding,) = data["findings"]
     assert set(finding) == {
-        "severity", "severity_reason", "rule", "incident_type", "title", "host", "group",
-        "start", "end", "duration_seconds", "strength", "flags", "metrics",
-        "evidence_count", "evidence",
+        "id", "incident", "role", "severity", "severity_reason", "rule", "incident_type",
+        "title", "host", "group", "start", "end", "duration_seconds", "strength", "flags",
+        "metrics", "evidence_count", "evidence",
     }  # fmt: skip
+
+    (incident,) = data["incidents"]
+    assert set(incident) == {
+        "id", "headline", "title", "severity", "severity_reason", "start", "end",
+        "duration_seconds", "devices", "root_cause", "alternatives", "confidence",
+        "confidence_reason", "unknowns", "findings", "context", "chain", "story",
+    }  # fmt: skip
+    assert incident["findings"] == [finding["id"]]
+    assert (finding["incident"], finding["role"]) == (incident["id"], "problem")
+    assert incident["root_cause"] == {
+        "kind": "link_flap",
+        "summary": finding["title"],
+        "devices": ["R1"],
+        "entity": "GigabitEthernet0/2",
+        "findings": [finding["id"]],
+        "explains": 1,
+    }
+    assert (incident["severity"], incident["confidence"]) == ("high", "medium")
+    assert incident["story"][0]["depth"] == 0 and incident["story"][0]["evidence"]
     assert (finding["severity"], finding["rule"], finding["host"]) == ("high", "link_flap", "R1")
     assert finding["start"].startswith("2026-03-03T02:35:21") and finding["start"].endswith("Z")
     assert finding["evidence_count"] == 12 and len(finding["evidence"]) == 5
@@ -90,26 +118,92 @@ def test_json_report_for_the_link_flap_scenario(capsys):
 # --- What is reported --------------------------------------------------------------------
 
 
-def test_most_severe_findings_come_first(capsys):
-    _, out, _ = run(capsys, str(SCENARIOS / "02_cascade.log"), "--year", "2026")
+def lines_of(out):
+    return [line.strip() for line in out.splitlines()]
 
-    assert "12 findings: 6 critical, 6 high" in out
-    levels = [line.split("]")[0].strip(" [") for line in out.splitlines() if line.startswith("  [")]
-    assert levels == ["CRITICAL"] * 6 + ["HIGH"] * 6
-    assert "Detail    cause: hold time expired" in out
-    assert "Detail    reason: Dead timer expired" in out
-    assert "Detail    noted: recovered" in out
+
+def test_cascade_is_reported_as_one_incident_with_its_story(capsys):
+    _, out, _ = run(capsys, str(SCENARIOS / "02_cascade.log"), "--year", "2026")
+    lines = lines_of(out)
+
+    assert "1 incident: 1 critical (12 findings on 4 devices)" in out
+    assert "[CRITICAL] Interface GigabitEthernet0/1 on R1 was down for 8m 36s" in out
+    assert "Devices       R1, R2, R3, R4" in out
+    assert "Findings      12 findings: 6 OSPF adjacency lost, 6 BGP session down" in out
+    assert "Confidence    High: every finding is accounted for" in out
+    # The story: the cause, then each group of effects indented under what caused it.
+    story = [
+        "Interface GigabitEthernet0/1 on R1 was down for 8m 36s",
+        "-> OSPF adjacency lost on R1 (3 findings) (at once)",
+        "-> BGP session down on R1 (3 findings) (+20s to +24s) [plausible]",
+        "-> BGP session down on R2, R3, R4 (+23s to +27s)",
+        "-> OSPF adjacency lost on R2, R3, R4 (+35s to +41s)",
+    ]
+    positions = [lines.index(step) for step in story]
+    assert positions == sorted(positions)
+    indent = {step: out.splitlines()[lines.index(step)].index(step[0]) for step in story}
+    assert indent[story[0]] < indent[story[1]] < indent[story[2]]
+    assert indent[story[3]] == indent[story[1]]
+    assert "Why: OSPF runs over that interface" in out
+    assert "gave up on it when the 40-second dead timer ran out." in out
+    # Evidence sits under the step it belongs to, with its line number in the file.
+    assert lines[positions[0] + 1].startswith("2260  Mar  3 02:46:12 R1")
+    assert "- Why the interface went down." in out
+    # The individual findings are not listed unless asked for.
+    assert "Findings in this incident" not in out
+
+
+def test_findings_option_lists_what_is_inside_an_incident(capsys):
+    _, out, _ = run(capsys, str(SCENARIOS / "02_cascade.log"), "--year", "2026", "--findings")
+
+    listing = out.split("Findings in this incident")[1].split("\n\n")[0]
+    assert listing.count("critical") == 6 and listing.count("high") == 6
+    assert "BGP session from R4 to 10.255.0.1 went down" in listing
+
+
+def test_incidents_are_listed_most_severe_first(capsys):
+    _, out, _ = run(capsys, str(SCENARIOS / "10_overlap.log"), "--year", "2026")
+
+    assert "2 incidents: 1 high, 1 medium (2 findings on 2 devices)" in out
+    badges = [line.split("]")[0].strip(" [") for line in out.splitlines() if line.startswith("  [")]
+    assert badges == ["HIGH", "MEDIUM"]
+
+
+def test_a_config_change_is_shown_as_a_suspect_not_a_cause(capsys):
+    _, out, _ = run(capsys, str(SCENARIOS / "03_config_bgp.log"), "--year", "2026")
+
+    # The headline is the failure; the change is named as the suspect.
+    assert "[CRITICAL] BGP session from R2 to 203.0.113.1 went down" in out
+    assert "Suspect       The configuration of R2 was changed by jdoe from 10.10.10.53" in out
+    assert "Likely cause" not in out
+    assert "Confidence    Medium: the change came shortly before the failure" in out
+    assert "-> BGP session from R2 to 203.0.113.1 went down (+19s) [suspect]" in out
+    assert "- Whether the change caused the failure." in out
 
 
 def test_brute_force_report_shows_the_first_failures_and_the_login_that_succeeded(capsys):
     _, out, _ = run(capsys, str(SCENARIOS / "04_brute_force.log"), "--year", "2026")
 
     assert "[CRITICAL] 400 failed logins from 192.0.2.77 in 11m 55s" in out
-    assert "Evidence  401 line(s) (showing 5)" in out
-    assert "...  396 more ..." in out
+    assert "Failed password for invalid user git from 192.0.2.77" in out
     assert "Accepted password for deploy from 192.0.2.77" in out
-    assert "Detail    logged in as: deploy" in out
-    assert "Detail    noted: password spraying, succeeded" in out
+    assert "Detail        logged in as: deploy" in out
+    assert "Detail        noted: password spraying, succeeded" in out
+    assert "- What was done with the account after the login succeeded." in out
+
+
+def test_a_topology_file_adds_what_the_logs_cannot_show(capsys):
+    reload = str(SCENARIOS / "07_device_reload.log")
+
+    _, without, _ = run(capsys, reload, "--year", "2026")
+    _, with_file, _ = run(capsys, reload, "--year", "2026", "--topology", str(SCENARIOS / "topology.toml"))  # noqa: E501
+
+    assert "Devices       SW1\n" in without
+    assert "Confidence    Medium: the whole chain rests on what one device logged." in without
+    assert "Devices       R3, SW1\n" in with_file
+    assert "-> Interface GigabitEthernet0/3 on R3 was down for" in with_file
+    assert "Why: The interface is cabled to the device that was reloading" in with_file
+    assert "Confidence    High:" in with_file
 
 
 def test_a_quiet_log_says_so_and_exits_zero(capsys):
@@ -117,23 +211,24 @@ def test_a_quiet_log_says_so_and_exits_zero(capsys):
 
     assert code == EXIT_CLEAN
     assert "No problems found at low severity or above." in out
-    assert "lower-severity findings not shown" in out
-    assert "Findings\n" not in out
+    assert "routine findings recorded" in out and "Use --min-severity info" in out
+    assert "Incidents\n" not in out and "Routine findings\n" not in out
     assert "Most frequent messages" in out  # the summary is still shown
 
 
 def test_minimum_severity_decides_what_is_listed_and_the_exit_code(capsys):
-    cascade = str(SCENARIOS / "02_cascade.log")
+    overlap = str(SCENARIOS / "10_overlap.log")
 
-    code_critical, critical_only, _ = run(capsys, cascade, "--min-severity", "critical")
+    code_high, high_only, _ = run(capsys, overlap, "--min-severity", "high")
     code_info, everything, _ = run(capsys, NOISE, "--year", "2026", "--min-severity", "info")
-    code_high, _, _ = run(capsys, str(SCENARIOS / "10_overlap.log"), "--min-severity", "critical")
+    code_critical, _, _ = run(capsys, overlap, "--min-severity", "critical")
 
-    assert code_critical == EXIT_FINDINGS
-    assert "6 findings: 6 critical" in critical_only and "[HIGH]" not in critical_only
-    assert code_info == EXIT_FINDINGS and "[INFO] Configuration of" in everything
-    assert "not shown" not in everything
-    assert code_high == EXIT_CLEAN  # the overlap scenario has nothing at critical
+    assert code_high == EXIT_FINDINGS
+    assert "1 incident: 1 high" in high_only and "[MEDIUM]" not in high_only
+    assert code_info == EXIT_FINDINGS
+    assert "Routine findings\n" in everything and "[INFO]" in everything
+    assert "Configuration of" in everything and "Use --min-severity info" not in everything
+    assert code_critical == EXIT_CLEAN  # the overlap scenario has nothing at critical
 
 
 def test_assumptions_are_stated(capsys):
@@ -188,7 +283,7 @@ def test_report_can_be_written_to_a_file(capsys, tmp_path):
     code, out, _ = run(capsys, FLAP, "--year", "2026", "--format", "markdown", "-o", str(target))
 
     assert code == EXIT_FINDINGS
-    assert out.strip() == f"Report written to {target} (1 finding(s) at low or above)."
+    assert out.strip() == f"Report written to {target} (1 incident(s) at low or above)."
     assert target.read_text(encoding="utf-8").startswith("# Log report:")
 
 
@@ -226,6 +321,7 @@ def test_unusable_files_give_a_polite_error(capsys, tmp_path, build, message):
         (["--timezone", "Mars/Olympus"], "unknown timezone 'Mars/Olympus'"),
         (["--year", "12"], "--year 12 is not a plausible year"),
         (["--rules", "no-such-rules.toml"], "rule file not found: no-such-rules.toml"),
+        (["--topology", "no-such-map.toml"], "topology file not found: no-such-map.toml"),
         (["--config", "no-such-config.toml"], "config file not found: no-such-config.toml"),
     ],
 )

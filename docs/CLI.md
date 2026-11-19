@@ -17,6 +17,8 @@ After installing the project (`pip install -e .`), the command is `netlog` insid
 | `--min-severity LEVEL` | `low` | Lowest severity to list: `info`, `low`, `medium`, `high` or `critical` |
 | `--year YEAR` | the current year | Year of the first log line. Classic syslog lines carry no year |
 | `--timezone ZONE` | `UTC` | Timezone of the devices' clocks: `UTC` or an offset such as `+05:30` |
+| `--topology FILE` | none | A file saying which address is which device and which interfaces are connected |
+| `--findings` | off | Also list the individual findings inside each incident |
 | `--rules FILE` | none | A rule file whose rules replace or add to the built-in ones |
 | `--config FILE` | none | A settings file that overrides the defaults |
 | `--no-color` | | Never use color |
@@ -34,6 +36,9 @@ netlog analyze router.log --min-severity high
 # Everything, including routine events
 netlog analyze router.log --min-severity info
 
+# Tell it about your network, so it can connect what the logs alone cannot
+netlog analyze router.log --topology my-network.toml
+
 # A report to attach to a ticket
 netlog analyze router.log --format markdown -o report.md
 
@@ -46,23 +51,73 @@ netlog analyze router.log --format json -o report.json
 In this order:
 
 1. **File:** number of lines, how many were understood, the devices seen, the time span, and how many message patterns the lines collapsed into.
-2. **Verdict:** how many findings at each severity, or a clear statement that nothing was found.
-3. **Findings**, most severe first. For each: the severity, what happened, when, why it has that severity, and up to five key log lines with their line numbers in the original file.
+2. **Verdict:** how many incidents at each severity, or a clear statement that nothing was found.
+3. **Incidents**, most severe first.
 4. **Most frequent messages:** the ten most common message patterns.
 5. **Notes:** any year or timezone that was assumed, and a warning if less than 95% of lines were understood.
 
-When a finding has more than five evidence lines, the first three and the last two are shown. The last lines matter: that is where a recovery, or the login that finally succeeded, appears.
+### An incident
 
-### Why Info findings are hidden by default
+Related findings are grouped into one incident. A failed link that takes down routing on three routers is one incident, not twelve alerts. Each incident shows:
 
-Routine events are recorded as Info findings: every configuration change, and every interface that stayed down for more than 30 seconds, which includes someone switching off a desk PC. They are useful context when something else goes wrong, but a normal day produces many of them. The report says how many were left out. `--min-severity info` lists them.
+| Line | Meaning |
+|---|---|
+| Headline | What happened, with the severity |
+| When, Devices, Findings | The time span, every device involved, and how many findings of each kind are inside |
+| Likely cause | The root cause the tool worked out. Shown as **Suspect** when it is a configuration change, which the logs can point at but never prove |
+| Confidence | High, medium or low, with the reason |
+| Severity | Why it has that level |
+| What happened | The story: the cause first, then each group of effects indented under what caused it |
+| Not known from these logs | What the logs cannot tell, such as why an interface went down |
+
+Here is the story of a failed link, shortened:
+
+```
+What happened
+  Interface GigabitEthernet0/1 on R1 was down for 8m 36s
+      2260  Mar  3 02:46:12 R1 89085: ... %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
+     -> OSPF adjacency lost on R1 (3 findings) (at once)
+        Why: OSPF runs over that interface, so the router dropped its neighbors there the
+             moment the interface went down.
+        -> BGP session down on R1 (3 findings) (+20s to +24s) [plausible]
+     -> OSPF adjacency lost on R2, R3, R4 (+35s to +41s)
+        Why: The other routers stopped hearing OSPF hellos from the device whose interface
+             failed, and gave up on it when the 40-second dead timer ran out.
+```
+
+- Like effects share a line: three routers losing the same neighbor are shown once.
+- The time in brackets is how long after the cause each effect began.
+- `[plausible]` marks a step that is usual but depends on how the network is built. `[suspect]` marks a configuration change. A step with no mark is certain when it applies.
+- Under each step are the log lines that prove it, with their line numbers in the original file.
+
+### Routine findings
+
+Routine events are recorded as Info findings: every configuration change, and every interface that stayed down for more than 30 seconds, which includes someone switching off a desk PC. On their own they are not problems, and a normal day produces many of them. They never form an incident, but one that explains an incident is attached to it: the interface that failed, or the change made just before. The report says how many were recorded, and `--min-severity info` lists them all.
+
+### Telling the tool about your network
+
+The logs never say which address belongs to which device, or which cable goes where. The tool works out what it can: when two routers form or lose an adjacency they both log it at the same moment, which reveals who is who. What it cannot work out it leaves unknown, and says so.
+
+A topology file fills the gaps. Both sections are optional, and a partial file is fine:
+
+```toml
+[[device]]
+name = "R1"
+addresses = ["10.255.0.1", "10.0.0.1"]
+
+[[link]]
+a = { host = "R3", interface = "GigabitEthernet0/3" }
+b = { host = "SW1", interface = "GigabitEthernet0/1" }
+```
+
+`data/scenarios/topology.toml` is a complete example for the sample logs.
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
-| `0` | Nothing found at or above the minimum severity |
-| `1` | At least one finding at or above the minimum severity |
+| `0` | No incident at or above the minimum severity |
+| `1` | At least one incident at or above the minimum severity. With `--min-severity info`, also when there are routine findings |
 | `2` | The file could not be analyzed: missing, empty, not a log, or a bad option |
 
 This makes the tool usable in a script:
@@ -88,6 +143,7 @@ The field names below are stable: new fields may be added, existing ones are not
   "version": 1,
   "file": { },
   "summary": { },
+  "incidents": [ ],
   "findings": [ ],
   "templates": [ ],
   "assumptions": [ ],
@@ -114,14 +170,39 @@ The field names below are stable: new fields may be added, existing ones are not
 | Field | Meaning |
 |---|---|
 | `min_severity` | The level asked for |
+| `incidents` | Incidents listed in `incidents` |
+| `incidents_by_severity` | Count of all incidents per level |
 | `by_severity` | Count of all findings per level, including those not listed |
 | `shown` | Findings listed in `findings` |
-| `hidden` | Findings below `min_severity` |
+| `hidden` | Findings not listed |
 
-### `findings[]`
+### `incidents[]`
 
 | Field | Meaning |
 |---|---|
+| `id` | Derived from the findings inside, so the same log always gives the same id |
+| `headline` | What happened |
+| `severity`, `severity_reason` | The level and why |
+| `start`, `end`, `duration_seconds` | When, in UTC |
+| `devices` | Every device involved |
+| `root_cause` | `{ "kind", "summary", "devices", "entity", "findings", "explains" }`. `findings` is empty when the cause is not itself in the logs, such as a device that went silent |
+| `alternatives` | Other possible root causes, in the same shape |
+| `confidence`, `confidence_reason` | `high`, `medium` or `low`, and why |
+| `unknowns` | What the logs cannot tell |
+| `findings` | Ids of the findings that are the problem |
+| `context` | Ids of routine findings attached for context |
+| `chain` | Each step of cause and effect: `{ "cause", "effect", "prior", "certainty", "explanation", "delay_seconds" }`, where `cause` and `effect` are finding ids |
+| `story` | The chain as the report shows it: rows of `{ "depth", "label", "when", "certainty", "explanation", "explained", "findings", "evidence" }` |
+| `title` | A longer description naming the most serious finding |
+
+### `findings[]`
+
+Every finding at or above the minimum severity, plus any that belong to a listed incident.
+
+| Field | Meaning |
+|---|---|
+| `id` | The id that incidents refer to |
+| `incident`, `role` | The incident it belongs to, and whether it is a `problem` or `context` there |
 | `severity` | `info`, `low`, `medium`, `high` or `critical` |
 | `severity_reason` | One line explaining the level |
 | `rule` | The rule that produced it; see [RULES.md](RULES.md) |
@@ -147,6 +228,6 @@ The field names below are stable: new fields may be added, existing ones are not
 
 ## What it cannot do yet
 
-- Group related findings into one incident with a root cause. A failed link that takes down routing on three routers is listed as its separate findings.
-- Explain a finding beyond its severity reason.
+- Write a free-form explanation or suggest fixes. The report states what the rules established; the plain-English explanation is a later stage.
+- Know your network without being told. Without a topology file it connects only what the logs themselves reveal.
 - Read anything other than a file: no live syslog.

@@ -14,8 +14,8 @@ import re
 import textwrap
 from datetime import datetime
 
-from netlog.detection.finding import format_duration
-from netlog.report.build import Report, ReportFinding
+from netlog.detection.finding import Finding, format_duration
+from netlog.report.build import Report, ReportIncident, StoryRow
 
 _WIDTH = 100
 _MAX_LINE = 180
@@ -27,7 +27,7 @@ _COLORS = {
     "low": "\x1b[36m",  # cyan
     "info": "\x1b[2m",  # dim
 }
-_BOLD, _RESET = "\x1b[1m", "\x1b[0m"
+_BOLD, _DIM, _RESET = "\x1b[1m", "\x1b[2m", "\x1b[0m"
 
 # Metrics worth a line in the report, with the label to show.
 _DETAILS = (
@@ -58,44 +58,56 @@ def _time(moment: datetime) -> str:
     return f"{moment:%Y-%m-%d %H:%M:%S}"
 
 
-def _when(item: ReportFinding) -> str:
-    finding = item.finding
-    if finding.duration_seconds < 1:
-        return f"{_time(finding.start)} UTC"
-    same_day = finding.start.date() == finding.end.date()
-    end = f"{finding.end:%H:%M:%S}" if same_day else _time(finding.end)
-    return f"{_time(finding.start)} to {end} UTC ({format_duration(finding.duration_seconds)})"
+def _span(start: datetime, end: datetime) -> str:
+    seconds = (end - start).total_seconds()
+    if seconds < 1:
+        return f"{_time(start)} UTC"
+    finish = f"{end:%H:%M:%S}" if start.date() == end.date() else _time(end)
+    return f"{_time(start)} to {finish} UTC ({format_duration(seconds)})"
 
 
-def _details(item: ReportFinding) -> list[str]:
-    metrics = item.finding.metrics
+def _details(finding: Finding) -> list[str]:
+    metrics = finding.metrics
     out = [f"{label}: {metrics[key]}" for key, label in _DETAILS if metrics.get(key) is not None]
     hosts = metrics.get("hosts")
     if isinstance(hosts, list) and len(hosts) > 1:
         out.append(f"devices: {', '.join(hosts)}")
-    if item.finding.flags:
-        out.append(f"noted: {', '.join(flag.replace('_', ' ') for flag in item.finding.flags)}")
+    if finding.flags:
+        out.append(f"noted: {', '.join(flag.replace('_', ' ') for flag in finding.flags)}")
     return out
 
 
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
 def _verdict(report: Report) -> str:
-    shown = {level: 0 for level in report.counts}
-    for item in report.findings:
-        shown[item.finding.severity] += 1
+    shown = {level: 0 for level in report.incident_counts}
+    for item in report.incidents:
+        shown[item.incident.severity] += 1
     parts = [f"{n} {level}" for level, n in shown.items() if n]
     if not parts:
         return f"No problems found at {report.min_severity} severity or above."
-    total = len(report.findings)
-    return f"{total} finding{'s' if total != 1 else ''}: {', '.join(parts)}"
-
-
-def _hidden_note(report: Report) -> str | None:
-    if not report.hidden:
-        return None
+    findings = sum(len(item.findings) for item in report.incidents)
+    devices = len({d for item in report.incidents for d in item.incident.devices})
     return (
-        f"{report.hidden} lower-severity finding{'s' if report.hidden != 1 else ''} not shown "
-        "(routine events such as config changes); use --min-severity info to list them."
+        f"{_plural(len(report.incidents), 'incident')}: {', '.join(parts)} "
+        f"({_plural(findings, 'finding')} on {_plural(devices, 'device')})"
     )
+
+
+def _routine_note(report: Report) -> str | None:
+    if not report.routine_count:
+        return None
+    note = (
+        f"{_plural(report.routine_count, 'routine finding')} recorded "
+        "(config changes, interfaces that went down)"
+    )
+    if report.attached_count:
+        note += f"; {report.attached_count} attached to incidents as context"
+    if not report.lists_routine:
+        note += ". Use --min-severity info to list them"
+    return note + "."
 
 
 def _time_span(report: Report) -> str:
@@ -104,6 +116,27 @@ def _time_span(report: Report) -> str:
     first, last = report.time_range
     length = format_duration((last - first).total_seconds())
     return f"{_time(first)} to {_time(last)} UTC ({length})"
+
+
+def _kinds(item: ReportIncident) -> str:
+    total = len(item.findings)
+    if total == 1:
+        return "1 finding"
+    return f"{total} findings: " + ", ".join(f"{n} {label}" for label, n in item.kinds)
+
+
+def _cause_label(item: ReportIncident) -> str:
+    root = item.incident.root_cause
+    return "Suspect" if root and root.kind == "config_change" else "Likely cause"
+
+
+def _row_text(row: StoryRow) -> str:
+    text = row.label
+    if row.when:
+        text += f" ({row.when})"
+    if row.certainty and row.certainty != "direct":
+        text += f" [{row.certainty}]"
+    return text
 
 
 # --- Terminal text -----------------------------------------------------------------------
@@ -133,31 +166,32 @@ def render_text(report: Report, color: bool = False) -> str:
     out.append("")
 
     out.append(paint("Verdict", _BOLD))
-    worst = report.findings[0].finding.severity if report.findings else None
+    worst = report.incidents[0].incident.severity if report.incidents else None
     out.append("  " + paint(_verdict(report), _COLORS[worst] if worst else _BOLD))
-    if note := _hidden_note(report):
+    if note := _routine_note(report):
         out += textwrap.wrap(note, _WIDTH, initial_indent="  ", subsequent_indent="  ")
     out.append("")
 
-    if report.findings:
-        out.append(paint("Findings", _BOLD))
-        for item in report.findings:
-            finding = item.finding
-            badge = paint(f"[{finding.severity.upper()}]", _COLORS[finding.severity])
-            out.append(f"  {badge} {_clean(finding.title)}")
-            out.append(f"      When      {_when(item)}")
-            out += _wrapped("Why", _clean(finding.severity_reason))
-            for detail in _details(item):
-                out += _wrapped("Detail", _clean(detail))
-            shown = len(item.lines)
-            of = "" if shown == item.evidence_count else f" (showing {shown})"
-            out.append(f"      Evidence  {item.evidence_count} line(s){of}")
-            for position, line in enumerate(item.lines):
-                skipped = item.evidence_count - shown
-                if skipped and position == shown - shown // 2:
-                    out.append(f"          ...  {skipped} more ...")
-                out.append(_shorten(f"        {line.line_no:>6}  {_clean(line.text)}"))
-            out.append("")
+    if report.incidents:
+        out.append(paint("Incidents", _BOLD))
+        for item in report.incidents:
+            out += _incident_text(item, report.show_findings, paint)
+
+    if report.lists_routine and report.routine_count:
+        out.append(paint("Routine findings", _BOLD))
+        for entry in report.findings:
+            finding = entry.finding
+            if finding.severity != "info":
+                continue
+            badge = paint("[INFO]", _COLORS["info"])
+            attached = "  (context for an incident)" if entry.role == "context" else ""
+            out.append(
+                _shorten(
+                    f"  {badge} {finding.start:%H:%M:%S}  {_clean(finding.title)}{attached}",
+                    _WIDTH + 20,
+                )
+            )
+        out.append("")
 
     if report.top_templates:
         out.append(paint("Most frequent messages", _BOLD))
@@ -181,11 +215,70 @@ def render_text(report: Report, color: bool = False) -> str:
     return "\n".join(out)
 
 
+def _incident_text(item: ReportIncident, show_findings: bool, paint) -> list[str]:
+    incident = item.incident
+    badge = paint(f"[{incident.severity.upper()}]", _COLORS[incident.severity])
+    out = [f"  {badge} {_clean(item.headline)}"]
+    out.append(f"      When          {_span(incident.start, incident.end)}")
+    out += _wrapped("Devices", ", ".join(_clean(d) for d in incident.devices))
+    out += _wrapped("Findings", _kinds(item))
+    if incident.root_cause:
+        out += _wrapped(_cause_label(item), _clean(incident.root_cause.summary))
+        out += _wrapped(
+            "Confidence", f"{incident.confidence.capitalize()}: {incident.confidence_reason}."
+        )
+    out += _wrapped("Severity", _clean(incident.severity_reason))
+    if len(item.findings) == 1:
+        for detail in _details(item.findings[0]):
+            out += _wrapped("Detail", _clean(detail))
+
+    out.append("      What happened")
+    unexplained_shown = False
+    for row in item.story:
+        if not row.explained and not unexplained_shown:
+            out.append("        Also in this incident, not explained by the cause above:")
+            unexplained_shown = True
+        pad = " " * (8 + 3 * row.depth)
+        arrow = "-> " if row.depth else ""
+        out += textwrap.wrap(
+            _clean(_row_text(row)),
+            _WIDTH,
+            initial_indent=pad + arrow,
+            subsequent_indent=pad + " " * len(arrow),
+        )
+        body = pad + " " * len(arrow)
+        if row.explanation:
+            out += textwrap.wrap(
+                _clean(row.explanation),
+                _WIDTH,
+                initial_indent=body + "Why: ",
+                subsequent_indent=body + "     ",
+            )
+        for line in row.lines:
+            out.append(_shorten(f"{body}{line.line_no:>6}  {_clean(line.text)}"))
+
+    if incident.unknowns:
+        out.append("      Not known from these logs")
+        for unknown in incident.unknowns:
+            out += textwrap.wrap(
+                _clean(unknown), _WIDTH, initial_indent="        - ", subsequent_indent="          "
+            )
+
+    if show_findings and len(item.findings) > 1:
+        out.append("      Findings in this incident")
+        for finding in sorted(item.findings, key=lambda f: (f.start, f.id)):
+            at = f"{finding.start:%H:%M:%S}"
+            line = f"        {finding.severity:<8} {at}  {_clean(finding.title)}"
+            out.append(_shorten(line, _WIDTH + 20))
+    out.append("")
+    return out
+
+
 def _wrapped(label: str, text: str) -> list[str]:
-    """A labelled line of a finding, wrapped so long reasons stay readable."""
-    indent = " " * 16
+    """A labelled line, wrapped so long reasons stay readable."""
+    indent = " " * 20
     return textwrap.wrap(
-        text, _WIDTH, initial_indent=f"      {label:<10}", subsequent_indent=indent
+        text, _WIDTH, initial_indent=f"      {label:<14}", subsequent_indent=indent
     ) or [f"      {label}"]
 
 
@@ -199,11 +292,11 @@ def _md(text: str) -> str:
     return _MD_SPECIAL.sub(r"\\\1", _clean(text))
 
 
-def _code_block(lines: list[str]) -> list[str]:
+def _code_block(lines: list[str], indent: str = "") -> list[str]:
     """A fenced block whose fence is longer than any run of backticks inside it."""
     longest = max((len(run) for line in lines for run in re.findall(r"`+", line)), default=0)
     fence = "`" * max(3, longest + 1)
-    return [f"{fence}text", *lines, fence]
+    return [f"{indent}{fence}text", *(indent + line for line in lines), f"{indent}{fence}"]
 
 
 def render_markdown(report: Report) -> str:
@@ -226,24 +319,60 @@ def render_markdown(report: Report) -> str:
     out.append("")
 
     out += ["## Verdict", "", f"**{_verdict(report)}**", ""]
-    if note := _hidden_note(report):
+    if note := _routine_note(report):
         out += [note, ""]
 
-    if report.findings:
-        out += ["## Findings", ""]
-        for item in report.findings:
-            finding = item.finding
-            out += [f"### {finding.severity.capitalize()}: {_md(finding.title)}", ""]
-            out.append(f"- **When:** {_when(item)}")
-            out.append(f"- **Why this severity:** {_md(finding.severity_reason)}")
-            for detail in _details(item):
-                label, _, value = detail.partition(": ")
-                out.append(f"- **{label.capitalize()}:** {_md(value)}")
-            shown = len(item.lines)
-            of = "" if shown == item.evidence_count else f", {shown} shown"
-            out += [f"- **Evidence:** {item.evidence_count} line(s){of}", ""]
-            out += _code_block([f"{line.line_no:>6}  {_clean(line.text)}" for line in item.lines])
+    if report.incidents:
+        out += ["## Incidents", ""]
+        for item in report.incidents:
+            incident = item.incident
+            out += [f"### {incident.severity.capitalize()}: {_md(item.headline)}", ""]
+            out.append(f"- **When:** {_span(incident.start, incident.end)}")
+            out.append(f"- **Devices:** {', '.join(_md(d) for d in incident.devices)}")
+            out.append(f"- **Findings:** {_kinds(item)}")
+            if incident.root_cause:
+                out.append(f"- **{_cause_label(item)}:** {_md(incident.root_cause.summary)}")
+                out.append(
+                    f"- **Confidence:** {incident.confidence.capitalize()}: "
+                    f"{incident.confidence_reason}."
+                )
+            out.append(f"- **Severity:** {_md(incident.severity_reason)}")
+            if len(item.findings) == 1:
+                for detail in _details(item.findings[0]):
+                    label, _, value = detail.partition(": ")
+                    out.append(f"- **{label.capitalize()}:** {_md(value)}")
+            out += ["", "**What happened**", ""]
+            unexplained_shown = False
+            for row in item.story:
+                if not row.explained and not unexplained_shown:
+                    out += ["", "Also in this incident, not explained by the cause above:", ""]
+                    unexplained_shown = True
+                pad = "  " * row.depth
+                out.append(f"{pad}- {_md(_row_text(row))}")
+                if row.explanation:
+                    out.append(f"{pad}  *Why:* {_md(row.explanation)}")
+                if row.lines:
+                    lines = [f"{line.line_no:>6}  {_clean(line.text)}" for line in row.lines]
+                    out += ["", *_code_block(lines, pad + "  "), ""]
+            if incident.unknowns:
+                out += ["", "**Not known from these logs**", ""]
+                out += [f"- {_md(unknown)}" for unknown in incident.unknowns]
+            if report.show_findings and len(item.findings) > 1:
+                out += ["", "**Findings in this incident**", ""]
+                out += ["| Severity | Time | Finding |", "|---|---|---|"]
+                for finding in sorted(item.findings, key=lambda f: (f.start, f.id)):
+                    at = f"{finding.start:%H:%M:%S}"
+                    out.append(f"| {finding.severity} | {at} | {_md(finding.title)} |")
             out.append("")
+
+    if report.lists_routine and report.routine_count:
+        out += ["## Routine findings", "", "| Time | Finding | |", "|---|---|---|"]
+        for entry in report.findings:
+            finding = entry.finding
+            if finding.severity == "info":
+                attached = "context for an incident" if entry.role == "context" else ""
+                out.append(f"| {finding.start:%H:%M:%S} | {_md(finding.title)} | {attached} |")
+        out.append("")
 
     if report.top_templates:
         out += ["## Most frequent messages", ""]

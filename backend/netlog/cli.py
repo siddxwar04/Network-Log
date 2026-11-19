@@ -18,6 +18,9 @@ from pathlib import Path
 
 from netlog import __version__
 from netlog.config import load_config
+from netlog.correlation.grouping import correlate
+from netlog.correlation.priors import load_priors
+from netlog.correlation.topology import load_topology
 from netlog.detection.engine import detect
 from netlog.detection.rules import LEVELS, load_rules
 from netlog.ingestion.ingest import ingest_file
@@ -70,6 +73,16 @@ def _parser() -> argparse.ArgumentParser:
         "--timezone",
         help="timezone of the devices' clocks: UTC, or an offset such as +05:30 (default: UTC)",
     )
+    analyze.add_argument(
+        "--topology",
+        type=Path,
+        help="a file saying which address is which device and which interfaces are connected",
+    )
+    analyze.add_argument(
+        "--findings",
+        action="store_true",
+        help="also list the individual findings inside each incident",
+    )
     analyze.add_argument("--rules", type=Path, help="a rule file that adds to the built-in rules")
     analyze.add_argument("--config", type=Path, help="a settings file that overrides the defaults")
     analyze.add_argument("--no-color", action="store_true", help="never use color")
@@ -121,7 +134,9 @@ def analyze(args: argparse.Namespace, progress: _Progress) -> Report:
         tz = parse_timezone(args.timezone) if args.timezone else UTC
         config = load_config(args.config)
         rules = load_rules(args.rules)
-    except ValueError as error:  # includes RuleError
+        hints = load_topology(args.topology) if args.topology else None
+        priors = load_priors()
+    except ValueError as error:  # includes RuleError, TopologyError and PriorError
         raise UsageError(str(error)) from None
 
     assumed_year = datetime.now(UTC).year
@@ -153,6 +168,8 @@ def analyze(args: argparse.Namespace, progress: _Progress) -> Report:
             mine_templates(db, upload_id, config)
             progress.show("Running detection rules")
             detect(db, upload_id, rules, config)
+            progress.show("Grouping findings into incidents")
+            correlate(db, upload_id, config, hints, priors)
             return build_report(
                 db,
                 upload_id,
@@ -160,6 +177,7 @@ def analyze(args: argparse.Namespace, progress: _Progress) -> Report:
                 year=args.year,
                 assumed_year=assumed_year,
                 timezone=args.timezone,
+                show_findings=args.findings,
             )
 
 
@@ -187,7 +205,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(text, encoding="utf-8", newline="\n")
-            summary = f"{len(report.findings)} finding(s) at {args.min_severity} or above"
+            summary = f"{len(report.incidents)} incident(s) at {args.min_severity} or above"
             print(f"Report written to {args.output} ({summary}).")
         else:
             sys.stdout.write(text)
@@ -204,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         progress.clear()
         print("netlog: stopped", file=sys.stderr)
         return EXIT_ERROR
-    return EXIT_FINDINGS if report.findings else EXIT_CLEAN
+    return EXIT_FINDINGS if report.has_something else EXIT_CLEAN
 
 
 if __name__ == "__main__":
