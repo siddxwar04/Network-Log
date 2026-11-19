@@ -1,0 +1,221 @@
+# Causal priors: what can cause what on a network.
+#
+# Grouping (the step before this) decides which findings belong to one incident. These
+# priors put the findings of an incident in order: which one came first and caused the
+# others. Each prior says "a finding of kind A can cause a finding of kind B, when they
+# are related like this, and B follows A within this long".
+#
+# Fields:
+#   cause, effect        rule names (see rules.toml)
+#   relation             how the two findings must be related:
+#                          same_interface     same device and same interface
+#                          same_host          same device
+#                          neighbor_is_cause  the effect is a device losing a neighbor,
+#                                             and that neighbor is the cause's device
+#                          link_peer          the effect's interface is cabled to the
+#                                             cause's device (needs a topology file)
+#   max_delay_seconds    the effect must start within this long after the cause starts
+#   during               true: the effect may start at any time while the cause lasts
+#   effect_before_seconds  the effect may start this long BEFORE the cause is logged
+#                          (a device logs "restarted" only after it is back)
+#   certainty            direct     the mechanism is certain when the relation holds
+#                        plausible  usual, but depends on how the network is built
+#                        suspect    worth checking first, never proven by logs alone
+#   priority             when several causes fit one effect, the highest wins
+#   explanation          the mechanism, in plain words; shown in reports
+#
+# Timers assumed: OSPF hello 10s and dead 40s; BGP hold 180s (the default) at most.
+# Device clocks disagree by a few seconds, so every limit is applied with that slack.
+
+
+# --- A failed or flapping interface -------------------------------------------------------
+
+[[prior]]
+name = "interface_down_drops_ospf_on_it"
+cause = ["interface_down", "link_flap"]
+effect = ["ospf_adjacency_loss"]
+relation = "same_interface"
+max_delay_seconds = 10
+during = true
+certainty = "direct"
+priority = 100
+# OSPF adjacencies live on an interface. The router does not wait for any timer here:
+# the moment its own interface goes down it deletes every neighbor reached through it.
+# The log line says so: "Neighbor Down: Interface down or detached".
+explanation = "OSPF runs over that interface, so the router dropped its neighbors there the moment the interface went down."
+
+[[prior]]
+name = "interface_down_silences_router_for_ospf_neighbors"
+cause = ["interface_down", "link_flap"]
+effect = ["ospf_adjacency_loss"]
+relation = "neighbor_is_cause"
+max_delay_seconds = 60
+during = true
+certainty = "direct"
+priority = 80
+# The routers on the other side of a switch keep their own interfaces up, so nothing
+# tells them at once. They simply stop receiving hello packets (sent every 10 seconds).
+# After 40 seconds with no hello, the dead timer expires and they declare the neighbor
+# down: "Neighbor Down: Dead timer expired". That is why these lines come about 30 to
+# 40 seconds after the failure, not immediately.
+explanation = "The other routers stopped hearing OSPF hellos from the device whose interface failed, and gave up on it when the 40-second dead timer ran out."
+
+[[prior]]
+name = "interface_down_silences_router_for_bgp_neighbors"
+cause = ["interface_down", "link_flap"]
+effect = ["bgp_session_down"]
+relation = "neighbor_is_cause"
+max_delay_seconds = 200
+during = true
+certainty = "direct"
+priority = 70
+# BGP peers exchange keepalives. With the path to the device gone, keepalives stop
+# arriving, and when the hold timer runs out (180 seconds by default, often tuned down
+# to 30) the peer closes the session and logs "hold time expired".
+explanation = "BGP keepalives from the device whose interface failed stopped arriving, so its peers closed their sessions when the hold timer ran out."
+
+[[prior]]
+name = "interface_down_drops_bgp_on_same_device"
+cause = ["interface_down", "link_flap"]
+effect = ["bgp_session_down"]
+relation = "same_host"
+max_delay_seconds = 200
+during = true
+certainty = "plausible"
+priority = 50
+# Plausible, not certain: the logs do not say which interface a BGP session's traffic
+# uses. If the session ran over the failed interface, it times out as above.
+explanation = "A BGP session on the same device dropped soon after; it probably ran over the interface that failed."
+
+
+# --- Routing protocols depending on each other --------------------------------------------
+
+[[prior]]
+name = "ospf_loss_drops_bgp_on_same_device"
+cause = ["ospf_adjacency_loss"]
+effect = ["bgp_session_down"]
+relation = "same_host"
+max_delay_seconds = 200
+certainty = "plausible"
+priority = 90
+# Internal BGP sessions usually run between loopback addresses, and a loopback is only
+# reachable through routes that OSPF provides. Lose the OSPF adjacency and the route to
+# the peer's loopback disappears; BGP keepalives can no longer get through, and the
+# session drops when its hold timer expires. So BGP follows OSPF, never the reverse.
+explanation = "BGP between loopback addresses depends on OSPF for the route to its peer; once the OSPF adjacency was lost the BGP session timed out."
+
+
+# --- A device going away ------------------------------------------------------------------
+
+[[prior]]
+name = "reload_request_restarts_device"
+cause = ["device_reload"]
+effect = ["device_restart"]
+relation = "same_host"
+max_delay_seconds = 900
+certainty = "direct"
+priority = 100
+# The gap between the two is the time the device takes to boot, usually a few minutes.
+explanation = "The device restarted because a reload was requested; the gap is its boot time."
+
+[[prior]]
+name = "reload_drops_neighbors"
+cause = ["device_reload"]
+effect = ["ospf_adjacency_loss", "bgp_session_down"]
+relation = "neighbor_is_cause"
+max_delay_seconds = 240
+certainty = "direct"
+priority = 85
+explanation = "The device was reloading, so its routing neighbors stopped hearing from it and timed it out."
+
+[[prior]]
+name = "restart_dropped_neighbors"
+cause = ["device_restart"]
+effect = ["ospf_adjacency_loss", "bgp_session_down"]
+relation = "neighbor_is_cause"
+max_delay_seconds = 0
+effect_before_seconds = 900
+certainty = "direct"
+priority = 80
+# A device logs "restarted" only once it is back. Its neighbors noticed it missing
+# minutes earlier, so here the effect is logged before the cause.
+explanation = "The device was down before it logged its restart, and its routing neighbors timed it out during that time."
+
+[[prior]]
+name = "reload_takes_down_connected_links"
+cause = ["device_reload"]
+effect = ["interface_down", "link_flap"]
+relation = "link_peer"
+max_delay_seconds = 30
+certainty = "direct"
+priority = 90
+explanation = "The interface is cabled to the device that was reloading, so it lost link when that device went down."
+
+[[prior]]
+name = "restart_took_down_connected_links"
+cause = ["device_restart"]
+effect = ["interface_down", "link_flap"]
+relation = "link_peer"
+max_delay_seconds = 0
+effect_before_seconds = 900
+certainty = "direct"
+priority = 85
+explanation = "The interface is cabled to the device that restarted, so it lost link while that device was down."
+
+
+# --- A struggling device ------------------------------------------------------------------
+
+[[prior]]
+name = "resource_exhaustion_drops_own_sessions"
+cause = ["cpu_hog", "memory_allocation_failure"]
+effect = ["ospf_adjacency_loss", "bgp_session_down"]
+relation = "same_host"
+max_delay_seconds = 120
+during = true
+certainty = "plausible"
+priority = 40
+# Hellos and keepalives are sent by processes on the device's CPU. If one process hogs
+# the CPU, or memory runs out, they are sent late or not at all, and the protocol timers
+# on the neighbors expire even though every link is fine.
+explanation = "A device short of CPU or memory cannot send OSPF hellos and BGP keepalives on time, so sessions time out although the links are fine."
+
+[[prior]]
+name = "resource_exhaustion_makes_neighbors_drop_it"
+cause = ["cpu_hog", "memory_allocation_failure"]
+effect = ["ospf_adjacency_loss", "bgp_session_down"]
+relation = "neighbor_is_cause"
+max_delay_seconds = 240
+during = true
+certainty = "plausible"
+priority = 40
+explanation = "The neighbors timed out a device that was too short of CPU or memory to keep its sessions alive."
+
+[[prior]]
+name = "switching_loop_destabilizes_interfaces"
+cause = ["mac_flapping"]
+effect = ["link_flap", "interface_down"]
+relation = "same_host"
+max_delay_seconds = 120
+during = true
+certainty = "plausible"
+priority = 30
+# A switching loop multiplies broadcast frames until ports are saturated. Switches may
+# then shut ports down to protect themselves, or the flood itself makes links unstable.
+explanation = "MAC addresses moving between ports points to a switching loop, which can flood ports until they go down."
+
+
+# --- Changes made by people ---------------------------------------------------------------
+
+[[prior]]
+name = "config_change_before_routing_failure"
+cause = ["config_change"]
+effect = ["bgp_session_down", "ospf_adjacency_loss"]
+relation = "same_host"
+max_delay_seconds = 300
+certainty = "suspect"
+priority = 10
+# Most outages follow a change. A new access list can block the protocol's packets, a
+# changed timer or AS number can make the two sides disagree. The logs do not record
+# WHAT was changed, only that something was, so this is a suspect and never a verdict.
+# It is used only when nothing physical explains the failure.
+explanation = "The configuration of this device was changed shortly before the failure. That is the first thing to check, though the logs do not show what was changed."

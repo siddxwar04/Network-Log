@@ -12,12 +12,12 @@ import os
 import re
 import sqlite3
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
 
-from netlog.correlation.incident import Incident, Link
+from netlog.correlation.incident import CausalStep, Incident, Link, RootCause
 from netlog.detection.finding import Finding
 from netlog.schema import Entities, Event, ParseStatus, Severity, SourceType
 
@@ -170,6 +170,15 @@ _MIGRATIONS = (
         notes           TEXT NOT NULL,
         PRIMARY KEY (upload_id, id)
     ) WITHOUT ROWID;
+    """,
+    # Version 5: cause and effect inside an incident.
+    """
+    ALTER TABLE incidents ADD COLUMN chain TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE incidents ADD COLUMN root_cause TEXT;
+    ALTER TABLE incidents ADD COLUMN alternatives TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE incidents ADD COLUMN confidence TEXT NOT NULL DEFAULT 'low';
+    ALTER TABLE incidents ADD COLUMN confidence_reason TEXT NOT NULL DEFAULT '';
+    ALTER TABLE incidents ADD COLUMN unknowns TEXT NOT NULL DEFAULT '[]';
     """,
 )
 SCHEMA_VERSION = len(_MIGRATIONS)
@@ -687,8 +696,9 @@ class Database:
             self._db.execute("DELETE FROM incidents WHERE upload_id = ?", (upload_id,))
             self._db.executemany(
                 "INSERT INTO incidents (upload_id, id, title, severity, severity_reason, "
-                "start_ts, end_ts, devices, finding_ids, context_ids, links, notes) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "start_ts, end_ts, devices, finding_ids, context_ids, links, notes, chain, "
+                "root_cause, alternatives, confidence, confidence_reason, unknowns) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     (
                         upload_id,
@@ -703,6 +713,12 @@ class Database:
                         json.dumps(i.context_ids),
                         json.dumps([[link.a, link.b, link.reason] for link in i.links]),
                         json.dumps(i.notes),
+                        json.dumps([asdict(step) for step in i.chain]),
+                        json.dumps(asdict(i.root_cause)) if i.root_cause else None,
+                        json.dumps([asdict(root) for root in i.alternatives]),
+                        i.confidence,
+                        i.confidence_reason,
+                        json.dumps(i.unknowns),
                     )
                     for i in incidents
                 ),
@@ -736,6 +752,12 @@ class Database:
             context_ids=json.loads(row["context_ids"]),
             links=[Link(a, b, reason) for a, b, reason in json.loads(row["links"])],
             notes=json.loads(row["notes"]),
+            chain=[CausalStep(**step) for step in json.loads(row["chain"])],
+            root_cause=RootCause(**json.loads(row["root_cause"])) if row["root_cause"] else None,
+            alternatives=[RootCause(**root) for root in json.loads(row["alternatives"])],
+            confidence=row["confidence"],
+            confidence_reason=row["confidence_reason"],
+            unknowns=json.loads(row["unknowns"]),
         )
 
     def events_by_id(self, event_ids: Iterable[int]) -> list[Event]:

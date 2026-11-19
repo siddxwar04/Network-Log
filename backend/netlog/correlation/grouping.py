@@ -16,11 +16,13 @@ import json
 from datetime import datetime, timedelta
 
 from netlog.config import load_config
+from netlog.correlation.causality import explain_causes
 from netlog.correlation.incident import Incident, Link
+from netlog.correlation.priors import Prior, load_priors
 from netlog.correlation.topology import Topology, build_topology
 from netlog.detection.finding import Finding
 from netlog.detection.rules import LEVELS
-from netlog.storage.database import Database
+from netlog.storage.database import Database, EventFilter
 
 _CONFIG_CHANGE = "config_change"
 
@@ -171,6 +173,10 @@ class _Correlator:
             peer = self.topology.peer(routine.host, interface)
             if peer and peer[0] in _hosts(member):
                 return f"{interface} on {routine.host} is connected to {peer[1]} on {peer[0]}"
+            # An interface failing on the very device that others lost as a neighbor.
+            neighbor = member.group.get("neighbor_ip")
+            if neighbor and self.topology.owner(neighbor) == routine.host:
+                return f"{routine.host} is the neighbor {neighbor} that {member.host} lost"
         return None
 
     # --- Building incidents ---------------------------------------------------------
@@ -211,8 +217,10 @@ def correlate(
     upload_id: int,
     config: dict | None = None,
     hints: Topology | None = None,
+    priors: list[Prior] | None = None,
 ) -> list[Incident]:
-    """Group an upload's findings into incidents, store them and return them.
+    """Group an upload's findings into incidents, work out cause and effect inside each,
+    store them and return them.
 
     `hints` is the user's topology file, if they gave one. Running it again replaces the
     previous incidents.
@@ -272,6 +280,17 @@ def correlate(
                 notes=notes,
             )
         )
+
+    by_id = {f.id: f for f in findings}
+    reach = correlator.reach
+
+    def host_has_logs(host: str, start: datetime, end: datetime) -> bool:
+        window = EventFilter(host=host, start=start - reach, end=end + reach)
+        return db.count_events(upload_id, window) > 0
+
+    causal_priors = priors if priors is not None else load_priors()
+    for incident in incidents:
+        explain_causes(incident, by_id, topology, causal_priors, settings, host_has_logs)
 
     incidents.sort(key=lambda i: (i.start, i.id))
     db.save_incidents(upload_id, incidents)
