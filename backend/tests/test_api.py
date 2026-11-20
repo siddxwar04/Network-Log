@@ -1016,3 +1016,17 @@ def test_asking_again_bypasses_the_cache(analyzed, tmp_path):
         assert explain_incident(cache, pack, refresh=True, **kwargs).source == "llm"
         assert len(provider.requests) == 2
         assert explain_incident(cache, pack, **kwargs).source == "cache"
+
+
+def test_events_can_be_limited_to_lines_that_were_not_understood(client):
+    mixed = small_log().decode() + "unknown record 17\nunknown record 99\n"
+    created = upload(client, mixed.encode()).json()
+    wait(client, created["id"])
+    path = f"/api/uploads/{created['id']}/events"
+
+    unparsed = client.get(path, params={"parse_status": "unparsed"}).json()
+    assert unparsed["total"] == 2
+    assert [e["raw"] for e in unparsed["items"]] == ["unknown record 17", "unknown record 99"]
+    assert {e["parse_status"] for e in unparsed["items"]} == {"unparsed"}
+    assert client.get(path, params={"parse_status": "parsed"}).json()["total"] == 31
+    assert_error(client.get(path, params={"parse_status": "maybe"}), 422, "invalid_request")

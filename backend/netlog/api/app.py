@@ -594,6 +594,10 @@ def create_app(
         q: Annotated[
             str | None, Query(max_length=200, description="Words that must all appear.")
         ] = None,
+        parse_status: Annotated[
+            Literal["parsed", "partial", "unparsed"] | None,
+            Query(description="Only lines the parsers understood fully, partly, or not at all."),
+        ] = None,
         order: Annotated[Literal["asc", "desc"], Query(description="Oldest or newest first.")] = (
             "asc"
         ),
@@ -601,7 +605,8 @@ def create_app(
         offset: Offset = 0,
     ) -> dict:
         """The parsed events of an upload, one per log line, in time order. Filter by time
-        range, device, severity, message type and text."""
+        range, device, severity, message type, text, and whether the line was understood:
+        `parse_status=unparsed` lists the lines no parser recognized."""
         where = EventFilter(
             start=_moment(start, "start"),
             end=_moment(end, "end"),
@@ -609,6 +614,7 @@ def create_app(
             min_severity=severity,
             event_keys=tuple(event_key or ()),
             text=q if q and q.strip() else None,
+            parse_status=parse_status,
         )
         with database() as db:
             need_upload(db, upload_id)
