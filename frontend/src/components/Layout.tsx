@@ -135,6 +135,7 @@ export function Layout() {
             <NavItem to={upload ? `/uploads/${upload}` : null} label="Dashboard" end />
             <NavItem to={upload ? `/uploads/${upload}/incidents` : null} label="Incidents" />
             <NavItem to="/live" label="Live" />
+            <NavItem to="/evaluation" label="Accuracy" />
           </nav>
           <ServerStatus />
           <button

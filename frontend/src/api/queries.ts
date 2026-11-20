@@ -51,6 +51,7 @@ export const keys = {
     ["timeline", String(id), incidentId] as const,
   demos: ["demos"] as const,
   live: ["live"] as const,
+  evaluation: ["evaluation"] as const,
 };
 
 export function useHealth() {
@@ -160,6 +161,11 @@ export function useLive() {
     staleTime: 0,
     refetchInterval: LIVE_MS,
   });
+}
+
+/** The latest accuracy results. They change only when the harness is run again. */
+export function useEvaluation() {
+  return useQuery({ queryKey: keys.evaluation, queryFn: api.evaluation, staleTime: 60_000 });
 }
 
 export function useDemos() {

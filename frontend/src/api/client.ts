@@ -3,6 +3,7 @@
 import type {
   Audience,
   DemoScenario,
+  Evaluation,
   Explanation,
   Health,
   IncidentDetail,
@@ -168,6 +169,8 @@ export const api = {
     request<LinesAround>(`/api/uploads/${id}/lines?around=${line}&context=${context}`),
 
   live: () => request<Live>("/api/live"),
+
+  evaluation: () => request<Evaluation>("/api/evaluation"),
 
   demos: () => request<Page<DemoScenario>>("/api/demo/scenarios?limit=100"),
 

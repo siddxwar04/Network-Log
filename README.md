@@ -2,7 +2,7 @@
 
 Reads network logs, finds the incidents in them, and explains what happened in plain English, with every statement linked to the log lines that prove it.
 
-> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface works: upload a file or pick a demo, watch it being analyzed, read the dashboard, and open each incident with its explanation beside the log lines it cites, a timeline, a causal chain and a post-mortem to download. Rules can be tuned in a file of your own, devices can send their logs live, and serious live incidents raise a chat alert. Still to come: a one-command install, measured accuracy, and testing on logs from real devices. See [Progress](#progress) for exactly what works today and what is left.
+> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface works: upload a file or pick a demo, watch it being analyzed, read the dashboard, and open each incident with its explanation beside the log lines it cites, a timeline, a causal chain and a post-mortem to download. Rules can be tuned in a file of your own, devices can send their logs live, and serious live incidents raise a chat alert. Its accuracy is measured on 170 generated files the rules were never tuned on. Still to come: a one-command install, and testing on logs from real devices. See [Progress](#progress) for exactly what works today and what is left.
 
 ## The problem
 
@@ -86,7 +86,7 @@ Two design rules shape the project:
 | Alerts | Slack or JSON webhook messages for serious live incidents, with a rate limit, digests and silences | Done |
 | One-command install | Docker Compose and an install guide | Planned |
 | DNS and firewall logs | Two more log types and rules for them, such as port scans | Planned (optional) |
-| Evaluation | Measured accuracy on labelled logs | Planned |
+| Evaluation | Measured accuracy on 160 held-out files and 10 noise files, with every miss listed | Done |
 | Real-log testing | Results on logs from real devices the tool was not built around | Planned |
 | Final documentation and review | This page finished, and a last sweep before publishing | Planned |
 
@@ -121,12 +121,28 @@ Open the incident
 ### What is still to come
 
 - **One-command install.** Docker Compose, so the API, the web interface and the listener start together, and an install guide.
-- **Measured accuracy.** An evaluation harness that scores detection, grouping and root causes against the answer keys, and the explanations against their evidence, as numbers that can be tracked over time.
+- **Explanation quality, measured.** Citation validity and fallback rate of real LLM answers, and scores from people using the [manual rubric](docs/EXPLANATION_RUBRIC.md).
 - **Logs from real devices.** So far every log is generated. Results on logs the tool was not built around, including from a virtual lab of real router images.
 - **DNS and firewall logs** (optional). Two more log types, with rules such as a port scan from one address.
 - **Finishing touches.** This page completed, and a final review before publishing.
 
-On the sample logs, all ten files give the expected incidents with the right root cause, severity and devices when the tool is given the network's topology. From the logs alone, nine of ten match: in the tenth the root cause is right, but a neighboring router is not connected to the incident, because nothing in the logs says the two devices are cabled together and the tool does not guess. These are generated logs; see [Limitations](#limitations).
+## Measured accuracy
+
+_These are synthetic logs from this project's own generator, so the numbers show the tool is consistent with its design, not that it works on every real network._
+
+The evaluation harness runs the tool on logs whose answers are known. The **held-out** set is 160 files made fresh for the test, 20 per kind of incident, which the rules were never tuned on: some incidents just above a rule's threshold, some far above, 13 built to fall just short and give nothing, with 2,000 to 10,000 lines of normal traffic around them and cascades reaching 2 to 4 routers. The tuned set is the ten sample logs below; the noise set is 10 files of normal traffic only, up to 50,000 lines. Measured from the logs alone, without a topology file:
+
+| Set | Files | Lines | Incidents | Found | False alarms | Precision | Recall | Root cause | Severity | Devices |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **Held-out** | 160 | 894,486 | 167 | 167 | 0 | 100% | 100% | 100% | 100% | 88.0% |
+| Tuned | 10 | 94,918 | 9 | 9 | 0 | 100% | 100% | 100% | 100% | 88.9% |
+| Noise only | 10 | 143,014 | 0 | 0 | 0 | | | | | |
+
+A found incident matches an expected one when it is of the same type, its likely cause is on the same device, and their times overlap. An unexpected incident at Medium or above is a false alarm. The tool reads, detects and correlates about 5,000 lines a second, and 94,918 lines of the sample logs reduce to 299 message patterns.
+
+**Why these numbers are weaker than they look.** The held-out files come from the same generator as the tuned ones, with the same message wording: they vary strength, volume and device count, not how devices word their messages, so a perfect score here says nothing about wording the tool has not seen. The rules and the generator were also written from the same understanding of how protocols fail. The one gap the harness does show is real: when a switch reloads, the router whose link to it drops is left out of the incident in all 21 such files, because nothing in the logs says the two are cabled together and the tool does not guess; a topology file fills it in. Explanations are not measured yet. Logs from real devices are the next test.
+
+The full results, with every item listed, are in [eval/results/latest.md](eval/results/latest.md), and on the Accuracy page of the web app.
 
 Here is the report for a log where one failed interface, hidden in 5,000 lines, took down routing on four routers (most evidence lines and the explanation left out, the rest shortened):
 
@@ -211,7 +227,14 @@ Then try your own file, or other options:
 .venv\Scripts\netlog analyze data\scenarios\07_device_reload.log --year 2026 --topology data\scenarios\topology.toml
 ```
 
-Check the tool against the answer keys of every sample log:
+Measure its accuracy: generate the held-out and noise sets once (about 30 seconds), then run the harness (about 5 minutes). It writes `eval/results/latest.md` and `latest.json`:
+
+```powershell
+.venv\Scripts\python -m eval.heldout
+.venv\Scripts\python -m eval.harness
+```
+
+Or check the tool quickly against the answer keys of the ten sample logs only:
 
 ```powershell
 .venv\Scripts\python -m eval.scorecard --topology data\scenarios\topology.toml
@@ -331,7 +354,9 @@ backend/
     alerts/          when to alert, message formats and webhook delivery
   tests/
 generator/           test log generator
-eval/                scorecard, pack sizes, a command to try an explanation, validity counts
+eval/                the evaluation harness and held-out sets, scorecard, pack sizes,
+                     a command to try an explanation, validity counts
+  results/           the latest accuracy results
 data/scenarios/      generated logs with label files
 docs/                reference documentation
 frontend/            web interface (React, Vite, Tailwind)
@@ -343,6 +368,8 @@ frontend/            web interface (React, Vite, Tailwind)
 - [docs/RULES.md](docs/RULES.md): every detection rule, with its log signature, thresholds, severity and usual causes.
 - [docs/WRITING_RULES.md](docs/WRITING_RULES.md): tuning the rules and writing your own, with three worked examples.
 - [docs/SCHEMA.md](docs/SCHEMA.md): every field of the normalized event, with worked examples.
+- [docs/EXPLANATION_RUBRIC.md](docs/EXPLANATION_RUBRIC.md): a one-page sheet for scoring explanations by hand.
+- [eval/results/latest.md](eval/results/latest.md): the latest accuracy results.
 - [generator/README.md](generator/README.md): the test log generator.
 
 ## Limitations

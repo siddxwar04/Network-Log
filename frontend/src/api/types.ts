@@ -351,3 +351,59 @@ export interface LiveStatus {
 }
 
 export type Live = LiveStatus | { enabled: false };
+
+// --- Evaluation: how accurate the tool is on logs with known answers ---------------------
+
+export interface DetectionScore {
+  expected: number;
+  found: number;
+  false_alarms: number;
+  precision: number | null;
+  recall: number | null;
+  f1: number | null;
+}
+
+export interface Rate {
+  correct: number;
+  of: number;
+  rate: number | null;
+}
+
+export interface EvaluationSet {
+  files: number;
+  lines: number;
+  overall: DetectionScore;
+  by_type: Record<string, DetectionScore>;
+  root_cause: Rate;
+  severity: Rate;
+  devices: Rate;
+  correlation: { split: number; merged: number; expected: number };
+  false_alarms_per_10k_lines: number | null;
+  lines_per_second: number | null;
+}
+
+export interface EvaluationProblem {
+  set: string;
+  file: string;
+  scenario: string;
+  seed: number | null;
+  variant: string;
+  kind: string;
+  reason: string;
+}
+
+export interface Evaluation {
+  generated_at: string;
+  limits: string;
+  matching_rule: string;
+  topology: boolean;
+  sets: Partial<Record<"tuned" | "heldout" | "noise", EvaluationSet>>;
+  efficiency?: {
+    compression_ratio: number | null;
+    lines: number;
+    templates: number;
+    evidence_pack_tokens: { incidents: number; median: number | null; largest: number | null; limit: number };
+  };
+  explanations?: { measured: boolean; why: string };
+  problems: EvaluationProblem[];
+}
