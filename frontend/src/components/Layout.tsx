@@ -1,7 +1,7 @@
 // The frame around every screen: the navigation, the server's status, the theme switch,
 // and a warning when the server cannot be reached.
 
-import { Moon, ServerOff, Sun } from "lucide-react";
+import { FlaskConical, Moon, ServerOff, Sun } from "lucide-react";
 import { useEffect } from "react";
 import { NavLink, Outlet, useLocation, useMatch } from "react-router";
 import { START_SERVER } from "../api/client";
@@ -55,6 +55,24 @@ function Logo() {
       </g>
       <circle cx="32" cy="35" r="6.5" fill="#785ef0" />
     </svg>
+  );
+}
+
+/** A small notice that the app runs without an LLM, and what that means. */
+function DemoBanner({ stored }: { stored: number }) {
+  return (
+    <div role="status" className="border-t border-line bg-sunken text-muted">
+      <div className="mx-auto flex max-w-7xl items-start gap-2 px-4 py-1.5 text-xs">
+        <FlaskConical aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-accent" />
+        <span>
+          <span className="font-medium text-ink">Demo mode.</span> No LLM is set up, so nothing is
+          sent anywhere.{" "}
+          {stored > 0
+            ? "The demo scenarios show explanations an LLM wrote earlier, stored with the app; your own files get the built-in explanations."
+            : "Every explanation comes from the built-in templates."}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -116,6 +134,7 @@ export function Layout() {
             <NavItem to="/" label="Upload" end />
             <NavItem to={upload ? `/uploads/${upload}` : null} label="Dashboard" end />
             <NavItem to={upload ? `/uploads/${upload}/incidents` : null} label="Incidents" />
+            <NavItem to="/live" label="Live" />
           </nav>
           <ServerStatus />
           <button
@@ -144,6 +163,7 @@ export function Layout() {
             </div>
           </div>
         )}
+        {health.data?.demo?.active && <DemoBanner stored={health.data.demo.stored_explanations} />}
       </header>
       <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
         <ErrorBoundary resetKey={pathname}>

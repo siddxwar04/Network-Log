@@ -17,6 +17,7 @@ import { ProcessingPage } from "./pages/ProcessingPage";
 const DashboardPage = lazy(() => import("./pages/DashboardPage"));
 const IncidentsPage = lazy(() => import("./pages/IncidentsPage"));
 const IncidentPage = lazy(() => import("./pages/IncidentPage"));
+const LivePage = lazy(() => import("./pages/LivePage"));
 
 function Loading() {
   return (
@@ -40,6 +41,7 @@ export function AppRoutes({ queryClient }: { queryClient?: QueryClient }) {
                 <Route path="uploads/:id/processing" element={<ProcessingPage />} />
                 <Route path="uploads/:id/incidents" element={<IncidentsPage />} />
                 <Route path="uploads/:id/incidents/:incidentId" element={<IncidentPage />} />
+                <Route path="live" element={<LivePage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
