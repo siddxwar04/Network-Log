@@ -2,7 +2,7 @@
 
 Reads network logs, finds the incidents in them, and explains what happened in plain English, with every statement linked to the log lines that prove it.
 
-> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. A web interface is in progress: uploading a file, watching it being analyzed and the dashboard of each upload work; the full incident page is still to come. See [Progress](#progress) for exactly what works today.
+> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface works: upload a file or pick a demo, watch it being analyzed, read the dashboard, and open each incident with its explanation beside the log lines it cites, a timeline, a causal chain and a post-mortem to download. Rules can be tuned in a file of your own, and devices can send their logs live; alerts and a one-command install are still to come. See [Progress](#progress) for exactly what works today.
 
 ## The problem
 
@@ -80,8 +80,9 @@ Two design rules shape the project:
 | Correlation | Grouping, causal chain, root cause, confidence | Done |
 | AI explanation | Cited explanations with a validator, a built-in fallback, junior and senior wording | Done |
 | Web API | Upload, pipeline status, events, incidents, explanations, timeline | Done |
-| Web interface | Upload, processing and dashboard screens done; incident page and timeline next | In progress |
-| Live syslog and alerts | Real-time intake, chat notifications | Planned |
+| Web interface | Upload, processing, dashboard, incident page with clickable citations, timeline, causal chain, post-mortem download, demo mode | Done |
+| User-editable rules | Overrides, rules of your own, critical devices, a command to try a rule file | Done |
+| Live syslog and alerts | Real-time intake works; chat notifications next | In progress |
 | Evaluation | Measured accuracy on labelled logs | Planned |
 
 ### What works today
@@ -152,7 +153,7 @@ Incidents
 | Device restart | A device starting up, requested or not | Any restart | Critical |
 | MAC flapping | A MAC address moving between ports, the usual sign of a loop | 3 warnings in one VLAN in 5 minutes | High |
 
-Every threshold is a setting in `backend/netlog/config/rules.toml`, and you can replace or add rules with your own file through `--rules`. A deliberate shutdown, a single unplugged cable and one mistyped password are not reported as problems.
+Every threshold is a setting in `backend/netlog/config/rules.toml`. You can change any rule's threshold, window or severity, switch it off, list your critical devices, and add rules of your own in `data/rules.toml`, without editing that file; `netlog rules test my-rules.toml router.log` shows what a rule file would find before you rely on it. See [docs/WRITING_RULES.md](docs/WRITING_RULES.md). A deliberate shutdown, a single unplugged cable and one mistyped password are not reported as problems.
 
 [docs/RULES.md](docs/RULES.md) describes each rule in full: its log signature, usual causes, and when it can be wrong.
 
@@ -228,7 +229,11 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:5173. Drop a log file on the page, or click a demo scenario, and watch the pipeline work through its stages; the dashboard of the file opens when it is done. Run the frontend's own tests with `npm test` in the same folder.
+Then open http://localhost:5173. Drop a log file on the page, or click a demo scenario, and watch the pipeline work through its stages; the dashboard of the file opens when it is done. Open an incident to read its explanation beside the log lines it rests on: every statement ends in line numbers you can click to find the line, the timeline shows each device's events in time, and the causal chain draws what caused what. Download post-mortem saves the incident as a Markdown document for a team to review and file; `netlog postmortem router.log` writes the same from the command line. Run the frontend's own tests with `npm test` in the same folder.
+
+Devices can also send their logs straight to netlog as things happen: start the API with `$env:NETLOG_LIVE = "1"` first, and the Live page shows incidents opening, growing and closing. `netlog replay data\scenarios\02_cascade.log --speed 20 --start 02:44` sends a sample to it, as if now. See [Live syslog](docs/CLI.md#live-syslog) for pointing a router at it and what plain syslog's lack of authentication means.
+
+With no API key set up, the app runs in demo mode and says so: nothing is sent anywhere, the demo scenarios use explanations an LLM wrote earlier and that are stored in `data/scenarios/explanations.json` (once that file has been generated with `netlog demo-explanations --yes`), and other files get the built-in explanations.
 
 Run the tests:
 
@@ -296,6 +301,7 @@ frontend/            web interface (React, Vite, Tailwind)
 
 - [docs/CLI.md](docs/CLI.md): the command, its options, exit codes and JSON output.
 - [docs/RULES.md](docs/RULES.md): every detection rule, with its log signature, thresholds, severity and usual causes.
+- [docs/WRITING_RULES.md](docs/WRITING_RULES.md): tuning the rules and writing your own, with three worked examples.
 - [docs/SCHEMA.md](docs/SCHEMA.md): every field of the normalized event, with worked examples.
 - [generator/README.md](generator/README.md): the test log generator.
 

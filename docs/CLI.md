@@ -283,8 +283,77 @@ Every finding at or above the minimum severity, plus any that belong to a listed
 | `event_key`, `source_type` | The message type and kind of log |
 | `hosts` | The devices it appeared on |
 
+## Post-mortem
+
+`netlog postmortem` analyzes a file the same way and writes the post-mortem of one incident in Markdown: title and severity, summary, impact, a timeline with times, the likely root cause and confidence, contributing factors, what the logs show was done and what should be done, what cannot be determined, follow-up actions as a checklist for the team, and an appendix of the evidence lines with their line numbers. It says at the top that it was drafted automatically and needs review before it is filed.
+
+```powershell
+# The most severe incident of the file
+.venv\Scripts\netlog postmortem data\scenarios\02_cascade.log --year 2026 -o postmortem.md
+# A chosen incident, written for a junior reader
+.venv\Scripts\netlog postmortem router.log --incident inc-6f861a94c9 --audience junior
+```
+
+It takes the reading options of `analyze` (`--year`, `--timezone`, `--topology`, `--audience`, `--no-llm`, `--rules`, `--config`, `--quiet`). Exit code 0 when it was written, 2 when the file has no incidents or no incident with that id. The web page of an incident has a Download post-mortem button that gives the same document.
+
+## Stored explanations for the demo
+
+The built-in scenarios can be explained once by a real LLM, and the answers stored with them in `data/scenarios/explanations.json` (the `[demo] explanations` setting). With no API key, the web app then shows those explanations for the demo scenarios, checked against the evidence again each time, and makes no request.
+
+```powershell
+# Says what it would do and what it would cost; makes no request
+.venv\Scripts\netlog demo-explanations
+# Does it: one or two requests per incident and audience
+.venv\Scripts\netlog demo-explanations --yes
+```
+
+It needs a configured LLM provider and key, and refuses to run without one.
+
+## Trying a rule file
+
+`netlog rules test <rule file> <log file>` runs the built-in rules, changed and added to by the rule file, over one log file, and prints how many times each rule triggered and what each finding says. Nothing is stored. A rule file with a mistake is refused with a message naming the rule, the setting and the problem. Exit code 0 when no rule triggered, 1 when one did, 2 when the rule file or the log could not be used. [WRITING_RULES.md](WRITING_RULES.md) explains the rule format.
+
+```powershell
+.venv\Scripts\netlog rules test my-rules.toml router.log --year 2026
+```
+
+## Live syslog
+
+Instead of uploading yesterday's file, devices can send their messages straight to netlog. The listener runs inside the web API when it is switched on:
+
+```powershell
+$env:NETLOG_LIVE = "1"
+.venv\Scripts\python -m uvicorn netlog.api.app:app
+```
+
+or with `enabled = true` under `[live]` in your settings. It listens on UDP and TCP port 5514 of 127.0.0.1, and the Live page of the web app (http://localhost:5173/live) shows the message rate, the senders and the open incidents, updating by itself. Each incident opens on the ordinary incident page.
+
+Every message goes through the same parsers as a file. Every few seconds the rules and correlation run over the last two hours of messages: an incident opens when it is first found, grows as more evidence arrives, keeps the same id the whole time, and closes when nothing new has arrived for five minutes and nothing in it is still down. It is explained once it has been stable for 30 seconds, and once more at most when it closes. Incidents survive a restart of the API. Messages are kept for 7 days and incidents with their evidence for 90; every one of these numbers is a setting under `[live]`.
+
+To try it without a router, send a sample to it, sped up 20 times, from 02:44 in the log:
+
+```powershell
+.venv\Scripts\netlog replay data\scenarios\02_cascade.log --speed 20 --start 02:44
+```
+
+`netlog replay` moves every timestamp so the first line happens now, and sends the lines at their moments over UDP (`--tcp` for TCP; `--host` and `--port` for another listener; `--end HH:MM` to stop early).
+
+### Pointing a device at it
+
+On a Cisco device: `logging host 192.168.1.20 transport udp port 5514`, where 192.168.1.20 is the computer running netlog. Then set `bind = "192.168.1.20"` under `[live]`, so the listener accepts messages from the network and not only from this computer.
+
+Port 514 is the standard syslog port. On Linux and macOS a port below 1024 needs administrator rights (run as root, or forward 514 to 5514 in the firewall); on Windows any free port can be used, but the Windows firewall must let the messages in. Devices that cannot change their port can be pointed at 514 with `port = 514`.
+
+### Security
+
+Plain syslog has no authentication and no encryption: anyone who can reach the port can send messages that look like they come from your routers, and anyone on the path can read them. So:
+
+- The listener binds to 127.0.0.1 by default, and to one address of your choosing otherwise. Do not bind it to `0.0.0.0` on a network you do not trust.
+- List your devices in `allowed_senders`; messages from any other address are counted and dropped. A sender address can still be forged over UDP, so this keeps out mistakes and casual noise, not a determined attacker.
+- Each sender has a rate limit, messages longer than 8 KB or that are not text are dropped, and a burst that overflows the queue drops the oldest messages. All of these are counted and shown on the Live page; none of them can stop the listener.
+- Message text is only ever shown as text, never run or interpreted.
+
 ## What it cannot do yet
 
 - Run anything. Fix steps and commands are suggestions for a person to read.
 - Know your network without being told. Without a topology file it connects only what the logs themselves reveal.
-- Read anything other than a file: no live syslog.
