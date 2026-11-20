@@ -2,7 +2,7 @@
 
 Reads network logs, finds the incidents in them, and explains what happened in plain English, with every statement linked to the log lines that prove it.
 
-> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface works: upload a file or pick a demo, watch it being analyzed, read the dashboard, and open each incident with its explanation beside the log lines it cites, a timeline, a causal chain and a post-mortem to download. Rules can be tuned in a file of your own, and devices can send their logs live; alerts and a one-command install are still to come. See [Progress](#progress) for exactly what works today.
+> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface works: upload a file or pick a demo, watch it being analyzed, read the dashboard, and open each incident with its explanation beside the log lines it cites, a timeline, a causal chain and a post-mortem to download. Rules can be tuned in a file of your own, devices can send their logs live, and serious live incidents raise a chat alert; a one-command install is still to come. See [Progress](#progress) for exactly what works today.
 
 ## The problem
 
@@ -58,7 +58,7 @@ Each part of that answer links to the log lines behind it.
  +---------------------+
     |
     v
- report (built), dashboard and alerts (planned)
+ report, dashboard and alerts (built)
 ```
 
 Two design rules shape the project:
@@ -82,7 +82,7 @@ Two design rules shape the project:
 | Web API | Upload, pipeline status, events, incidents, explanations, timeline | Done |
 | Web interface | Upload, processing, dashboard, incident page with clickable citations, timeline, causal chain, post-mortem download, demo mode | Done |
 | User-editable rules | Overrides, rules of your own, critical devices, a command to try a rule file | Done |
-| Live syslog and alerts | Real-time intake works; chat notifications next | In progress |
+| Live syslog and alerts | Real-time intake, and Slack or JSON webhook alerts with a rate limit and silences | Done |
 | Evaluation | Measured accuracy on labelled logs | Planned |
 
 ### What works today

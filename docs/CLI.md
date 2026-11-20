@@ -353,6 +353,58 @@ Plain syslog has no authentication and no encryption: anyone who can reach the p
 - Each sender has a rate limit, messages longer than 8 KB or that are not text are dropped, and a burst that overflows the queue drops the oldest messages. All of these are counted and shown on the Live page; none of them can stop the listener.
 - Message text is only ever shown as text, never run or interpreted.
 
+### Alerts
+
+When the listener finds something serious, netlog can post a message to a chat channel. Set one or both webhook addresses in `.env` (never in a settings file: whoever has the address can post to your channel), then restart the API:
+
+```text
+NETLOG_ALERT_SLACK_URL=https://hooks.slack.com/services/...
+NETLOG_ALERT_WEBHOOK_URL=https://example.org/my-receiver
+```
+
+The first takes Slack's format, which Mattermost, Rocket.Chat and Discord (its `/slack` address) also accept. The second gets plain JSON: every fact as a field, and the same text under `text`. Check the setup with a clearly labelled test message:
+
+```powershell
+.venv\Scripts\netlog alerts test
+```
+
+which prints `slack: delivered`, or why not (`slack: FAILED after 4 tries (HTTP 500)`). The web API has the same as `POST /api/alerts/test`.
+
+An alert is short enough to read on a phone's lock screen. Replaying scenario 2 gives exactly one:
+
+```text
+CRITICAL: BGP session from R1 to 10.255.0.2 went down, with 11 related findings on R1, R2, R3, R4
+Likely cause: Interface GigabitEthernet0/1 on R1 was down for 1m 5s (high confidence)
+Devices: R1, R2, R3, R4 | started 2026-03-03 02:46:11 UTC
+Open the incident (a link to the incident page)
+```
+
+with a `Summary:` line from the explanation when one is ready; an alert never waits for it.
+
+**When.** An incident raises an alert when it opens at High or above, and one more each time its severity rises to a level it has not been alerted at ("CRITICAL (was HIGH): ..."). More evidence at the same severity, the incident closing, or a restart of the API send nothing more. The first alert waits until the incident has been open for 30 seconds, because an incident grows in its first seconds (the interface goes down, then OSPF, then BGP): waiting sends one alert with the severity and cause it settles on, instead of a High alert naming the wrong cause followed by a Critical one. With `on_close = true`, an incident that raised an alert also says when it is over and how long it lasted.
+
+**Floods.** At most 5 alerts go out in any 10 minutes. The ones beyond are held back and sent together, as soon as the limit allows, in one digest message that lists the incidents worst first.
+
+**Silences, for planned maintenance.** Incidents are still detected and recorded; only the messages stop.
+
+```powershell
+.venv\Scripts\netlog alerts silence --device R1 --for 2h --reason "IOS upgrade"
+.venv\Scripts\netlog alerts silence --type link_flap --for 30m
+.venv\Scripts\netlog alerts silence --all --for 1h
+.venv\Scripts\netlog alerts list
+.venv\Scripts\netlog alerts unsilence 3
+```
+
+A device silence covers every incident that involves the device. A type silence covers incidents whose likely cause is of that type: a rule name from `GET /api/rules`, such as `link_flap`, or `link_failure` when both ends of a link report it. An incident with no likely cause is covered when any of its findings comes from that rule. An incident that was silenced is not alerted later at the same severity, only if it gets worse. A silence lasts at most a week. The API has the same: `POST /api/alerts/silences` with `{"device": "R1", "minutes": 120, "reason": "IOS upgrade"}`, and `DELETE /api/alerts/silences/{id}` to end one early. `GET /api/alerts` lists the silences and every alert recorded: sent, failed, held for a digest, or silenced.
+
+**Failures.** A webhook that does not answer, times out, or answers with a server error is tried 3 more times, after 2, 4 and 8 seconds; then the failure is recorded and shown under warnings on the Live page. An answer saying the address is wrong is not retried. Sending happens on a thread of its own, so a webhook that is down never slows detection. Alerts not yet sent when the API stops go out when it starts again.
+
+**Privacy.** An alert goes to an outside service. If that service is not your own (Slack, Discord), set `redact = true` under `[alerts]`: IP addresses become `[IP]` and usernames `[user]` in every alert, and the link is kept. It is off by default, for chat you host yourself, where the names help. The webhook address never appears in logs, in API answers or in the database.
+
+**Safety.** Titles and causes come from log content, which anyone who can reach the listener can write. Every value is put on one line, cut to length, and escaped, so a log line cannot add lines to an alert, turn into a link, or mention `@channel` or `@everyone`.
+
+Every number here is a setting under `[alerts]`: `min_severity`, `first_alert_wait_seconds`, `on_close`, `max_alerts`, `period_seconds`, `redact`, `link_base` (the address of the web pages, for the link; change it to one your phone can reach), `timeout_seconds`, `max_retries`, `backoff_seconds` and `max_silence_hours`.
+
 ## What it cannot do yet
 
 - Run anything. Fix steps and commands are suggestions for a person to read.
