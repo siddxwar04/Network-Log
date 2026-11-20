@@ -98,7 +98,7 @@ Two design rules shape the project:
 
 On the sample logs, all nine files give the expected incidents with the right root cause, severity and devices when the tool is given the network's topology. From the logs alone, eight of nine match: in the ninth the root cause is right, but a neighboring router is not connected to the incident, because nothing in the logs says the two devices are cabled together and the tool does not guess. These are generated logs; see [Limitations](#limitations).
 
-Here is the report for a log where one failed interface, hidden in 5,000 lines, took down routing on four routers (evidence lines shortened):
+Here is the report for a log where one failed interface, hidden in 5,000 lines, took down routing on four routers (most evidence lines left out, the rest shortened):
 
 ```
 Verdict
@@ -112,6 +112,8 @@ Incidents
       Likely cause  Interface GigabitEthernet0/1 on R1 was down for 8m 36s
       Confidence    High: every finding is accounted for, the timing matches how the protocols
                     behave, and 4 devices report it.
+      Severity      Critical: the most serious finding is "BGP session from R1 to 10.255.0.2 went
+                    down".
       What happened
         Interface GigabitEthernet0/1 on R1 was down for 8m 36s
             2260  Mar  3 02:46:12 R1 ... %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
@@ -126,6 +128,8 @@ Incidents
       Not known from these logs
         - Why the interface went down. The logs show that it did, not whether a cable, an optic or
           the device at the other end was at fault.
+        - Neighbor addresses not matched to a device in these logs: 10.255.0.2, 10.255.0.3,
+          10.255.0.4. List them in a topology file to say which device each one is.
 ```
 
 ## What it detects
@@ -171,6 +175,7 @@ Then try your own file, or other options:
 ```powershell
 .venv\Scripts\netlog analyze router.log --min-severity high
 .venv\Scripts\netlog analyze router.log --format markdown -o report.md
+.venv\Scripts\netlog analyze router.log --findings
 .venv\Scripts\netlog analyze data\scenarios\07_device_reload.log --year 2026 --topology data\scenarios\topology.toml
 ```
 
@@ -209,6 +214,7 @@ The `data/scenarios/` folder holds generated logs, each with a `.labels.json` fi
 | `05_dhcp_exhaustion` | The DHCP pool runs out and new devices are refused |
 | `07_device_reload` | A switch is reloaded: minutes of silence, then boot messages |
 | `08_noise` | A normal day with no incident |
+| `08_noise_50k` | The same normal day at 50,000 lines, for checking speed and false alarms |
 | `10_overlap` | Two unrelated incidents at the same time |
 
 The noise in these files is built to resemble incidents without being one: a single port going down and up, an administrator shutting a port on purpose, one mistyped password. Detection rules have to tell the difference.
