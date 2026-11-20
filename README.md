@@ -2,7 +2,7 @@
 
 Reads network logs, finds the incidents in them, and explains what happened in plain English, with every statement linked to the log lines that prove it.
 
-> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface is still to come. See [Progress](#progress) for exactly what works today.
+> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. A web interface is in progress: uploading a file, watching it being analyzed and the dashboard of each upload work; the full incident page is still to come. See [Progress](#progress) for exactly what works today.
 
 ## The problem
 
@@ -80,7 +80,7 @@ Two design rules shape the project:
 | Correlation | Grouping, causal chain, root cause, confidence | Done |
 | AI explanation | Cited explanations with a validator, a built-in fallback, junior and senior wording | Done |
 | Web API | Upload, pipeline status, events, incidents, explanations, timeline | Done |
-| Web interface | Dashboard, incident page, timeline | Next |
+| Web interface | Upload, processing and dashboard screens done; incident page and timeline next | In progress |
 | Live syslog and alerts | Real-time intake, chat notifications | Planned |
 | Evaluation | Measured accuracy on labelled logs | Planned |
 
@@ -220,6 +220,16 @@ Start the web API, which puts the same pipeline behind HTTP for a browser or ano
 
 Then open http://127.0.0.1:8000/docs. The page lists every endpoint and lets you try each one: upload a file with `POST /api/uploads`, poll `GET /api/uploads/{id}/status` until the stage is `done`, then read `GET /api/uploads/{id}/incidents`. The API has no login and is meant for one person's machine; do not expose it to a network you do not trust. Uploaded files are kept in `data/uploads/` under generated names and results in `data/netlog.db`; the size limit and the browser origins allowed to call it are settings under `[api]`.
 
+To use it in the browser, keep the API running and start the web interface in a second PowerShell window. It needs Node.js 20 or newer; the first `npm install` takes a few minutes.
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Then open http://localhost:5173. Drop a log file on the page, or click a demo scenario, and watch the pipeline work through its stages; the dashboard of the file opens when it is done. Run the frontend's own tests with `npm test` in the same folder.
+
 Run the tests:
 
 ```powershell
@@ -279,7 +289,7 @@ generator/           test log generator
 eval/                scorecard, pack sizes, a command to try an explanation, validity counts
 data/scenarios/      generated logs with label files
 docs/                reference documentation
-frontend/            web interface            (planned)
+frontend/            web interface (React, Vite, Tailwind)
 ```
 
 ## Documentation
