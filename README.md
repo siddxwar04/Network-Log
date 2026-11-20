@@ -2,7 +2,7 @@
 
 Reads network logs, finds the incidents in them, and explains what happened in plain English, with every statement linked to the log lines that prove it.
 
-> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface works: upload a file or pick a demo, watch it being analyzed, read the dashboard, and open each incident with its explanation beside the log lines it cites, a timeline, a causal chain and a post-mortem to download. Rules can be tuned in a file of your own, devices can send their logs live, and serious live incidents raise a chat alert; a one-command install is still to come. See [Progress](#progress) for exactly what works today.
+> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface works: upload a file or pick a demo, watch it being analyzed, read the dashboard, and open each incident with its explanation beside the log lines it cites, a timeline, a causal chain and a post-mortem to download. Rules can be tuned in a file of your own, devices can send their logs live, and serious live incidents raise a chat alert. Still to come: a one-command install, measured accuracy, and testing on logs from real devices. See [Progress](#progress) for exactly what works today and what is left.
 
 ## The problem
 
@@ -82,8 +82,13 @@ Two design rules shape the project:
 | Web API | Upload, pipeline status, events, incidents, explanations, timeline | Done |
 | Web interface | Upload, processing, dashboard, incident page with clickable citations, timeline, causal chain, post-mortem download, demo mode | Done |
 | User-editable rules | Overrides, rules of your own, critical devices, a command to try a rule file | Done |
-| Live syslog and alerts | Real-time intake, and Slack or JSON webhook alerts with a rate limit and silences | Done |
+| Live syslog | Devices send logs over UDP or TCP; incidents open, grow and close as things happen | Done |
+| Alerts | Slack or JSON webhook messages for serious live incidents, with a rate limit, digests and silences | Done |
+| One-command install | Docker Compose and an install guide | Planned |
+| DNS and firewall logs | Two more log types and rules for them, such as port scans | Planned (optional) |
 | Evaluation | Measured accuracy on labelled logs | Planned |
+| Real-log testing | Results on logs from real devices the tool was not built around | Planned |
+| Final documentation and review | This page finished, and a last sweep before publishing | Planned |
 
 ### What works today
 
@@ -99,6 +104,27 @@ Two design rules shape the project:
 - **Collapses noise.** A 50,000-line file reduces to 28 message patterns.
 - **Never drops a line.** A line no parser understands is kept and counted, and the tool reports what share of the file it understood.
 - **Treats log content as untrusted.** A username such as `admin from 10.0.0.1 port 22` does not fool the parsers, and a log line cannot inject formatting into a report.
+- **Has a web interface.** Upload a file or pick a demo scenario, watch the pipeline run, read the dashboard, and open an incident to see its explanation beside the log lines it cites, a timeline of every device's events, and the causal chain drawn as a diagram. Each incident can be downloaded as a post-mortem in Markdown. With no API key the app runs in demo mode and says so.
+- **Lets you tune the rules without code.** A rule file of your own changes thresholds, windows and severities, switches rules off, adds new rules and lists your critical devices. `netlog rules test` shows what a rule file would find before you rely on it, and a mistake is refused with a message naming the rule and the setting.
+- **Watches the network live.** Devices send their syslog straight to netlog over UDP or TCP. Every few seconds the same rules run over the recent messages: an incident opens when it is first found, grows as evidence arrives, keeps one id the whole time, and closes after five quiet minutes. The listener binds to this computer only unless told otherwise, can be limited to a list of senders, and rate-limits each sender. `netlog replay` sends a sample log to it as if it were happening now.
+- **Sends a chat alert when something serious starts.** A short message to Slack (or anything that takes Slack's format) or to any JSON webhook: the severity, what broke, the likely cause with its confidence, the devices, the start time and a link to the incident. One incident gives one alert, plus one more only if it gets worse. Floods are capped and summed up in a digest, and a device, an incident type or everything can be silenced for planned maintenance. Webhook addresses stay in `.env` and never appear in logs or API answers.
+
+On scenario 2, the live listener sends exactly one alert:
+
+```
+CRITICAL: BGP session from R1 to 10.255.0.2 went down, with 11 related findings on R1, R2, R3, R4
+Likely cause: Interface GigabitEthernet0/1 on R1 was down for 1m 5s (high confidence)
+Devices: R1, R2, R3, R4 | started 2026-03-03 02:46:11 UTC
+Open the incident
+```
+
+### What is still to come
+
+- **One-command install.** Docker Compose, so the API, the web interface and the listener start together, and an install guide.
+- **Measured accuracy.** An evaluation harness that scores detection, grouping and root causes against the answer keys, and the explanations against their evidence, as numbers that can be tracked over time.
+- **Logs from real devices.** So far every log is generated. Results on logs the tool was not built around, including from a virtual lab of real router images.
+- **DNS and firewall logs** (optional). Two more log types, with rules such as a port scan from one address.
+- **Finishing touches.** This page completed, and a final review before publishing.
 
 On the sample logs, all ten files give the expected incidents with the right root cause, severity and devices when the tool is given the network's topology. From the logs alone, nine of ten match: in the tenth the root cause is right, but a neighboring router is not connected to the incident, because nothing in the logs says the two devices are cabled together and the tool does not guess. These are generated logs; see [Limitations](#limitations).
 
@@ -233,6 +259,16 @@ Then open http://localhost:5173. Drop a log file on the page, or click a demo sc
 
 Devices can also send their logs straight to netlog as things happen: start the API with `$env:NETLOG_LIVE = "1"` first, and the Live page shows incidents opening, growing and closing. `netlog replay data\scenarios\02_cascade.log --speed 20 --start 02:44` sends a sample to it, as if now. See [Live syslog](docs/CLI.md#live-syslog) for pointing a router at it and what plain syslog's lack of authentication means.
 
+To get a chat message when the listener finds something serious, put a webhook address in `.env`: `NETLOG_ALERT_SLACK_URL` for Slack or anything that takes its format, `NETLOG_ALERT_WEBHOOK_URL` for plain JSON. Then restart the API and check the setup:
+
+```powershell
+.venv\Scripts\netlog alerts test
+.venv\Scripts\netlog alerts silence --device R1 --for 2h --reason "IOS upgrade"
+.venv\Scripts\netlog alerts list
+```
+
+See [Alerts](docs/CLI.md#alerts) for when an alert is sent, the rate limit, silences and hiding addresses and usernames in alert text.
+
 With no API key set up, the app runs in demo mode and says so: nothing is sent anywhere, the demo scenarios use explanations an LLM wrote earlier and that are stored in `data/scenarios/explanations.json` (once that file has been generated with `netlog demo-explanations --yes`), and other files get the built-in explanations.
 
 Run the tests:
@@ -276,6 +312,8 @@ See [generator/README.md](generator/README.md) for the simulated network, the li
 backend/
   netlog/
     cli.py           the netlog command
+    rules_cli.py     netlog rules test
+    alerts_cli.py    netlog alerts test, list, silence, unsilence
     schema.py        the normalized event
     ingestion/       reading files
     parsers/         syslog, Cisco IOS, Linux auth and DHCP parsers
@@ -289,6 +327,8 @@ backend/
                      the validator and the built-in explanations
     redaction/       hiding addresses and names before they leave the machine
     api/             the web API and the background pipeline
+    live/            the live syslog listener, incident tracking and replay
+    alerts/          when to alert, message formats and webhook delivery
   tests/
 generator/           test log generator
 eval/                scorecard, pack sizes, a command to try an explanation, validity counts
@@ -308,12 +348,15 @@ frontend/            web interface (React, Vite, Tailwind)
 ## Limitations
 
 - **A root cause is the tool's best reading of the logs, not a verdict.** It is found by applying fixed rules about what can cause what. Each incident states a confidence level and what the logs cannot tell.
-- **Explanations are not checked or shown in the report yet.** An LLM can be asked to explain an incident, and its answer must have a fixed structure with citations, but nothing yet verifies that the citations are real, and the report still states only what the rules established.
+- **Not yet tried against a real AI model at scale.** The validator, the retry and the fallback are tested with stand-in answers, including hostile ones; the stored demo explanations have not been generated yet.
 - **Tested on generated logs only.** The sample logs follow real Cisco IOS, OpenSSH and ISC dhcpd formats, but they come from this project's own generator, so the results show the tool is consistent with its design, not that it works on every network. Testing on logs from real devices is planned.
 - **Little knowledge of your network.** The tool cannot tell a core uplink from a desk port unless you list what is critical in the settings, so an interface going down is Info on its own. It also cannot know which cable goes where; a small topology file fills that in.
 - **Cisco IOS first.** Other vendors will follow once the pipeline is complete.
-- **A file at a time.** There is no live syslog intake yet.
+- **Plain syslog has no authentication.** Anyone who can reach the listener's port can send messages that look like they come from your routers. Keep it on a network you trust; see [Live syslog](docs/CLI.md#live-syslog).
+- **Live incidents look back two hours.** An incident longer than that keeps the counts of its first findings, and a topology file is not used for live incidents yet.
+- **Alerts go to chat only.** Slack-compatible and JSON webhooks; no email or paging services, and alert settings are changed in the settings file, not on a screen. Not yet tried against a real Slack workspace.
+- **Single user, no login.** The web app and API are meant for one person's machine.
 
 ## Tech stack
 
-Python with pydantic, SQLite, Drain3, pytest and ruff. Planned: FastAPI for the web API, and React with Vite and Tailwind for the web interface.
+Backend: Python with FastAPI, pydantic, SQLite, Drain3, pytest and ruff. Frontend: React with Vite, Tailwind and Apache ECharts.
