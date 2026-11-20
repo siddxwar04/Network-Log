@@ -233,6 +233,18 @@ _MIGRATIONS = (
     ALTER TABLE llm_calls ADD COLUMN try_number INTEGER NOT NULL DEFAULT 1;
     ALTER TABLE llm_calls ADD COLUMN rejected TEXT;
     """,
+    # Version 9: what the web API needs to know about an upload: which stage of the
+    # pipeline it is in, where it failed, the generated name its file is stored under,
+    # the year and timezone it was read with, and whether it is a built-in demo scenario.
+    """
+    ALTER TABLE uploads ADD COLUMN stage TEXT NOT NULL DEFAULT 'queued';
+    ALTER TABLE uploads ADD COLUMN failed_stage TEXT;
+    ALTER TABLE uploads ADD COLUMN stored_name TEXT;
+    ALTER TABLE uploads ADD COLUMN year INTEGER;
+    ALTER TABLE uploads ADD COLUMN timezone TEXT;
+    ALTER TABLE uploads ADD COLUMN source TEXT NOT NULL DEFAULT 'file';
+    UPDATE uploads SET stage = status WHERE status IN ('done', 'failed');
+    """,
 )
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -294,6 +306,16 @@ class Upload:
     classified: int
     created_at: datetime
     finished_at: datetime | None
+    # Where the pipeline is: queued, parsing, templates, detection, correlation,
+    # explanation, done or failed. `failed_stage` is the stage it failed in.
+    stage: str = "done"
+    failed_stage: str | None = None
+    # The generated name the uploaded file is stored under. `filename` is only a label.
+    stored_name: str | None = None
+    # The year and timezone given for the upload, when its lines carry none.
+    year: int | None = None
+    timezone: str | None = None
+    source: str = "file"  # file, or demo for a built-in scenario
 
     @property
     def percent_parsed(self) -> float:
@@ -458,19 +480,58 @@ class Database:
 
     # --- Uploads --------------------------------------------------------------------------
 
-    def create_upload(self, filename: str, size_bytes: int = 0) -> int:
+    def create_upload(
+        self,
+        filename: str,
+        size_bytes: int = 0,
+        *,
+        stored_name: str | None = None,
+        year: int | None = None,
+        timezone: str | None = None,
+        source: str = "file",
+    ) -> int:
         with self._db:
             cursor = self._db.execute(
-                "INSERT INTO uploads (filename, size_bytes, created_at) VALUES (?, ?, ?)",
-                (filename, size_bytes, _to_micros(datetime.now(UTC))),
+                "INSERT INTO uploads (filename, size_bytes, created_at, stored_name, year, "
+                "timezone, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    filename,
+                    size_bytes,
+                    _to_micros(datetime.now(UTC)),
+                    stored_name,
+                    year,
+                    timezone,
+                    source,
+                ),
             )
         return cursor.lastrowid
 
-    def finish_upload(self, upload_id: int, coverage) -> None:
-        """Record the parse coverage of an upload and mark it as done."""
+    def finish_upload(self, upload_id: int, coverage, done: bool = True) -> None:
+        """Record the parse coverage of an upload and mark it as done.
+
+        With `done` false only the coverage is recorded: parsing is finished, but later
+        stages of the pipeline are still to run.
+        """
+        if not done:
+            with self._db:
+                self._db.execute(
+                    "UPDATE uploads SET line_count = ?, parsed = ?, partial = ?, unparsed = ?, "
+                    "blank = ?, classified = ? WHERE id = ?",
+                    (
+                        coverage.total,
+                        coverage.parsed,
+                        coverage.partial,
+                        coverage.unparsed,
+                        coverage.blank,
+                        coverage.classified,
+                        upload_id,
+                    ),
+                )
+            return
         with self._db:
             self._db.execute(
-                "UPDATE uploads SET status = 'done', finished_at = ?, line_count = ?, parsed = ?, "
+                "UPDATE uploads SET status = 'done', stage = 'done', finished_at = ?, "
+                "line_count = ?, parsed = ?, "
                 "partial = ?, unparsed = ?, blank = ?, classified = ? WHERE id = ?",
                 (
                     _to_micros(datetime.now(UTC)),
@@ -485,11 +546,56 @@ class Database:
             )
 
     def fail_upload(self, upload_id: int, error: str) -> None:
+        """Mark an upload as failed, remembering the stage it was in."""
         with self._db:
             self._db.execute(
-                "UPDATE uploads SET status = 'failed', error = ?, finished_at = ? WHERE id = ?",
+                "UPDATE uploads SET status = 'failed', error = ?, finished_at = ?, "
+                "failed_stage = CASE WHEN stage IN ('done', 'failed') THEN failed_stage "
+                "ELSE stage END, stage = 'failed' WHERE id = ?",
                 (error, _to_micros(datetime.now(UTC)), upload_id),
             )
+
+    def set_stage(self, upload_id: int, stage: str) -> None:
+        """Record which stage of the pipeline an upload has reached."""
+        with self._db:
+            self._db.execute("UPDATE uploads SET stage = ? WHERE id = ?", (stage, upload_id))
+
+    def complete_upload(self, upload_id: int) -> None:
+        """Mark an upload as done: every stage of the pipeline has run."""
+        with self._db:
+            self._db.execute(
+                "UPDATE uploads SET status = 'done', stage = 'done', finished_at = ? WHERE id = ?",
+                (_to_micros(datetime.now(UTC)), upload_id),
+            )
+
+    def fail_interrupted(self, reason: str) -> int:
+        """Mark every upload still being processed as failed. For when the program starts
+        and finds work a previous run never finished. Returns how many there were."""
+        with self._db:
+            cursor = self._db.execute(
+                "UPDATE uploads SET status = 'failed', error = ?, finished_at = ?, "
+                "failed_stage = stage, stage = 'failed' WHERE status = 'processing'",
+                (reason, _to_micros(datetime.now(UTC))),
+            )
+        return cursor.rowcount
+
+    def count_uploads(self) -> int:
+        return self._scalar("SELECT COUNT(*) FROM uploads")
+
+    def progress(self, upload_id: int) -> dict[str, int]:
+        """How much of an upload exists so far: lines stored, message patterns, findings
+        and incidents. Each number grows while its stage of the pipeline runs."""
+        counts = {}
+        for name, table in (
+            ("lines", "raw_lines"),
+            ("templates", "templates"),
+            ("findings", "findings"),
+            ("incidents", "incidents"),
+        ):
+            counts[name] = self._scalar(
+                f"SELECT COUNT(*) FROM {table} WHERE upload_id = ?", (upload_id,)
+            )
+        return counts
 
     def get_upload(self, upload_id: int) -> Upload | None:
         row = self._db.execute("SELECT * FROM uploads WHERE id = ?", (upload_id,)).fetchone()
@@ -693,10 +799,14 @@ class Database:
                 ),
             )
 
-    def templates(self, upload_id: int, limit: int = 100, offset: int = 0) -> list[Template]:
-        """An upload's templates, the most frequent first."""
+    def templates(
+        self, upload_id: int, limit: int = 100, offset: int = 0, rarest_first: bool = False
+    ) -> list[Template]:
+        """An upload's templates, the most frequent first unless asked otherwise."""
+        direction = "ASC" if rarest_first else "DESC"
         rows = self._db.execute(
-            "SELECT * FROM templates WHERE upload_id = ? ORDER BY count DESC, id LIMIT ? OFFSET ?",
+            f"SELECT * FROM templates WHERE upload_id = ? ORDER BY count {direction}, id "
+            "LIMIT ? OFFSET ?",
             (upload_id, limit, offset),
         )
         return [self._template(row) for row in rows]
@@ -983,6 +1093,20 @@ class Database:
             events += [self._event(row) for row in rows]
         events.sort(key=lambda e: (e.timestamp is not None, e.timestamp, e.line_no))
         return events
+
+    def events_by_line(self, upload_id: int, line_numbers: Iterable[int]) -> list[Event]:
+        """The events of the given lines of an upload's file, in file order."""
+        numbers = list(line_numbers)
+        events: list[Event] = []
+        for offset in range(0, len(numbers), 500):  # stay under SQLite's parameter limit
+            batch = numbers[offset : offset + 500]
+            marks = ", ".join("?" * len(batch))
+            rows = self._db.execute(
+                f"{_SELECT_EVENT} WHERE e.upload_id = ? AND e.line_no IN ({marks})",
+                (upload_id, *batch),
+            )
+            events += [self._event(row) for row in rows]
+        return sorted(events, key=lambda event: event.line_no)
 
     def get_event(self, event_id: int) -> Event | None:
         row = self._db.execute(f"{_SELECT_EVENT} WHERE e.id = ?", (event_id,)).fetchone()

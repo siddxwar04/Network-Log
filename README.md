@@ -79,6 +79,7 @@ Two design rules shape the project:
 | Command-line tool | One command, a report in text, Markdown or JSON | Done |
 | Correlation | Grouping, causal chain, root cause, confidence | Done |
 | AI explanation | Cited explanations with a validator, a built-in fallback, junior and senior wording | Done |
+| Web API | Upload, pipeline status, events, incidents, explanations, timeline | Done |
 | Web interface | Dashboard, incident page, timeline | Next |
 | Live syslog and alerts | Real-time intake, chat notifications | Planned |
 | Evaluation | Measured accuracy on labelled logs | Planned |
@@ -211,6 +212,14 @@ Count how the explanations of every sample incident fared against those checks. 
 
 See [docs/CLI.md](docs/CLI.md) for every option, the exit codes and the JSON format.
 
+Start the web API, which puts the same pipeline behind HTTP for a browser or another program:
+
+```powershell
+.venv\Scripts\python -m uvicorn netlog.api.app:app
+```
+
+Then open http://127.0.0.1:8000/docs. The page lists every endpoint and lets you try each one: upload a file with `POST /api/uploads`, poll `GET /api/uploads/{id}/status` until the stage is `done`, then read `GET /api/uploads/{id}/incidents`. The API has no login and is meant for one person's machine; do not expose it to a network you do not trust. Uploaded files are kept in `data/uploads/` under generated names and results in `data/netlog.db`; the size limit and the browser origins allowed to call it are settings under `[api]`.
+
 Run the tests:
 
 ```powershell
@@ -264,7 +273,7 @@ backend/
     llm/             the evidence pack, the prompt, the provider adapter, the cache,
                      the validator and the built-in explanations
     redaction/       hiding addresses and names before they leave the machine
-    api/             web API                  (planned)
+    api/             the web API and the background pipeline
   tests/
 generator/           test log generator
 eval/                scorecard, pack sizes, a command to try an explanation, validity counts

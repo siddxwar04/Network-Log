@@ -20,15 +20,22 @@ def ingest_file(
     filename: str | None = None,
     on_progress: Callable[[int], None] | None = None,
     progress_every: int = 5000,
+    upload_id: int | None = None,
+    done: bool = True,
 ) -> int:
-    """Parse a file and store its events. Returns the id of the new upload.
+    """Parse a file and store its events. Returns the id of the upload.
 
     If the file cannot be read, the upload is kept with status `failed` and the reason,
     and the error is raised again for the caller to report. `on_progress` is called with
     the number of lines handled so far, every `progress_every` lines.
+
+    `upload_id` names an upload that was created beforehand, which is how the web API
+    hands out an id before the file is read. With `done` false the upload is not marked
+    as done afterwards, because more stages follow.
     """
     path = Path(path)
-    upload_id = db.create_upload(filename or path.name, path.stat().st_size)
+    if upload_id is None:
+        upload_id = db.create_upload(filename or path.name, path.stat().st_size)
     coverage = Coverage()
 
     def events() -> Iterator[Event]:
@@ -42,5 +49,5 @@ def ingest_file(
     except Exception as error:
         db.fail_upload(upload_id, str(error))
         raise
-    db.finish_upload(upload_id, coverage)
+    db.finish_upload(upload_id, coverage, done=done)
     return upload_id

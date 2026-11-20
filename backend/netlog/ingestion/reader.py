@@ -23,6 +23,12 @@ class RawLine:
     truncated: bool = False
 
 
+def looks_binary(head: bytes) -> bool:
+    """Whether the first bytes of a file say it is not text. UTF-16 text, which is full
+    of zero bytes, is recognized by its byte-order mark."""
+    return not head.startswith(_UTF16_BOMS) and b"\x00" in head
+
+
 def read_lines(
     path: str | Path, max_line_length: int = DEFAULT_MAX_LINE_LENGTH
 ) -> Iterator[RawLine]:

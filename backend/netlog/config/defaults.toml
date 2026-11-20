@@ -258,3 +258,28 @@ change_verbs = [
     "power cycle", "increase", "decrease", "raise", "lower", "extend", "shorten",
     "update", "upgrade",
 ]
+
+[api]
+# The web API. Start it with:  python -m uvicorn netlog.api.app:app
+#
+# The largest file that may be uploaded, in megabytes. A larger one is refused.
+max_upload_mb = 50
+# Where uploaded files are kept, each under a generated name.
+upload_dir = "data/uploads"
+# The folder of built-in demo scenarios: log files with a .labels.json file beside them.
+demo_dir = "data/scenarios"
+# Web pages served from these addresses may call the API from a browser. Add the address
+# of your own frontend here; it is not open to every site.
+allowed_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+# How many items a list returns when the request does not say, and the most it may ask for.
+default_page_size = 50
+max_page_size = 500
+# The most events an incident's timeline returns. An incident with more is cut at this
+# number, earliest first, and the answer says so.
+timeline_max_events = 2000
+# About how many bars the events-over-time chart of an upload has. The API picks a round
+# bucket length that gives at most this many.
+histogram_buckets = 120
+# How many pipelines run at the same time. More than one gains little: SQLite lets one
+# writer in at a time.
+workers = 1

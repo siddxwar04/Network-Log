@@ -473,6 +473,11 @@ def _explanation_json(explanation: ReportExplanation | None) -> dict | None:
     }
 
 
+def explanation_json(explanation: ReportExplanation) -> dict:
+    """One explanation as plain data, in the same shape as inside the report."""
+    return _explanation_json(explanation)
+
+
 def to_json(report: Report) -> dict:
     """The report as plain data. Field names here are a stable interface: add, never rename."""
     upload = report.upload

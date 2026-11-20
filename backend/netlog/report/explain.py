@@ -15,7 +15,8 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from netlog.llm.evidence import EvidencePack, outgoing_packs
+from netlog.correlation.incident import Incident
+from netlog.llm.evidence import EvidencePack, outgoing_pack, outgoing_packs
 from netlog.llm.explain import ExplanationResult, explain_incident, restore_explanation
 from netlog.llm.provider import Provider
 from netlog.llm.settings import LLMSettings
@@ -117,6 +118,40 @@ def present(
         # never in the pack. The validator rejects that; this is the last look.
         leftover_tokens=sorted(set(_TOKEN_LEFT.findall(shown.model_dump_json()))),
     )
+
+
+def explain_one(
+    db: Database,
+    upload_id: int,
+    incident: Incident,
+    cache: Database,
+    mode: str = "senior",
+    *,
+    use_llm: bool = True,
+    refresh: bool = False,
+    provider: Provider | None = None,
+    settings: LLMSettings | None = None,
+    config: dict | None = None,
+) -> ReportExplanation:
+    """The explanation of one incident, without building the pack of every other one.
+
+    The stand-ins stay the same as in every other explanation of the upload, because
+    they are read from the upload's stored map and new ones are added to it.
+    """
+    redactor = Redactor.load(db, upload_id, config)
+    pack = outgoing_pack(db, upload_id, incident, redactor, config)
+    redactor.save(db, upload_id)
+    result = explain_incident(
+        cache,
+        pack,
+        mode,
+        use_llm=use_llm,
+        refresh=refresh,
+        provider=provider,
+        settings=settings,
+        config=config,
+    )
+    return present(db, upload_id, pack, result, redactor)
 
 
 def explain_incidents(

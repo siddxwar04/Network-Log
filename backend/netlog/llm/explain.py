@@ -154,12 +154,14 @@ def explain_pack(
     settings: LLMSettings | None = None,
     config: dict | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    refresh: bool = False,
 ) -> ExplanationResult:
     """Explain the incident in `pack` for a junior or a senior reader.
 
     `pack` must be the outgoing pack (`outgoing_pack`), which is redacted. `cache` is
     the database that holds stored explanations and the record of requests. `provider`
-    replaces the configured one, which is how tests supply a fake.
+    replaces the configured one, which is how tests supply a fake. With `refresh` the
+    stored answer is not used: the LLM is asked again and its new answer replaces it.
     """
     if mode not in MODES:
         raise ValueError(f"unknown audience mode {mode!r}; choose from {', '.join(MODES)}")
@@ -217,7 +219,7 @@ def explain_pack(
     prompt = load_prompt(settings.prompt)
     key = cache_key(pack.hash, prompt.version, provider.name, result.model, mode)
     result.cache_key = key
-    stored = cache.get_explanation(key)
+    stored = None if refresh else cache.get_explanation(key)
     if stored is not None:
         try:
             explanation = parse_explanation(stored.content)
@@ -322,19 +324,27 @@ def explain_incident(
     settings: LLMSettings | None = None,
     config: dict | None = None,
     sleep: Callable[[float], None] = time.sleep,
+    refresh: bool = False,
 ) -> ExplanationResult:
     """Explain the incident in `pack`, whatever happens: by the LLM when one is configured
     and its answer passes validation, by the built-in explanation otherwise.
 
     The result's `source` says which. When it is "fallback", `reason` says why the LLM's
     explanation was not used. With `use_llm` false no request is made, whatever is
-    configured.
+    configured. With `refresh` a stored answer is not used and the LLM is asked again.
     """
     if mode not in MODES:
         raise ValueError(f"unknown audience mode {mode!r}; choose from {', '.join(MODES)}")
     if use_llm:
         result = explain_pack(
-            cache, pack, mode, provider=provider, settings=settings, config=config, sleep=sleep
+            cache,
+            pack,
+            mode,
+            provider=provider,
+            settings=settings,
+            config=config,
+            sleep=sleep,
+            refresh=refresh,
         )
     else:
         result = ExplanationResult(None, "none", mode, reason=SWITCHED_OFF)
