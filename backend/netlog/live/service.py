@@ -5,6 +5,8 @@ open, grow and close while things are happening.
                         -> writer: parse each message, store it under the "live" upload
                         -> detector: every few seconds, run the rules and correlation over
                            the recent window and update the live incidents
+                        -> alerter: decide which incidents deserve a chat message,
+                           and send them from a thread of its own
                         -> pruner: now and then, delete old messages
 
 Every message goes through the same parsers as a file. The sender's address is recorded,
@@ -33,6 +35,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from netlog.alerts.alerter import Alerter, alerter_from_config
 from netlog.correlation.grouping import correlate
 from netlog.detection.engine import detect
 from netlog.detection.rules import RuleError, load_rule_set
@@ -88,6 +91,7 @@ class LiveService:
         *,
         llm: LLMSettings | None = None,
         provider: Provider | None = None,
+        alerts: Alerter | None = None,
         clock: Callable[[], datetime] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -117,6 +121,11 @@ class LiveService:
         self._transports: list = []
         self._task: asyncio.Task | None = None
         self._clients: set[asyncio.StreamWriter] = set()
+        self.alerts = alerts or alerter_from_config(self.db_path, config)
+        if self.alerts.on_error is None:
+            self.alerts.on_error = lambda text: self.errors.append(
+                f"{self.clock().isoformat(timespec='seconds')}: {text}"
+            )
 
     # --- Storage --------------------------------------------------------------------------
 
@@ -244,6 +253,8 @@ class LiveService:
             if changed or self._dirty or after != before:
                 self._persist(db, state)
                 self._dirty = False
+            # Alerts are decided before explaining, so a slow LLM never delays one.
+            self._alert(db, state, now)
             self._explain(db, state, now)
             self.last_detection = now
 
@@ -301,6 +312,23 @@ class LiveService:
                 changed = True
         return changed
 
+    def _alert(self, db: Database, state: dict[str, dict], now: datetime) -> None:
+        """Hand the incidents that may need an alert to the alerter: the open ones, and
+        those closed in the last day, whose close may still be worth saying."""
+        if not self.alerts.enabled:
+            return
+        recent = now - timedelta(days=1)
+        items = [
+            item
+            for item in state.values()
+            if item["state"] == "open" or (item["closed_at"] or now) >= recent
+        ]
+        try:
+            self.alerts.review(db, self.upload_id, items, now)
+        except Exception as error:  # an alert never stops detection
+            log.exception("deciding on alerts")
+            self.errors.append(f"{now.isoformat(timespec='seconds')}: alerts: {error}")
+
     def _persist(self, db: Database, state: dict[str, dict]) -> None:
         """Write every live incident and its findings as the live upload's own, so the
         ordinary pages and endpoints can show them."""
@@ -345,10 +373,11 @@ class LiveService:
             if incident is None:
                 continue
             try:
-                explain_one(
+                explanation = explain_one(
                     db, self.upload_id, incident, db, "senior",
                     provider=self.provider, settings=self.llm, config=self.config,
                 )  # fmt: skip
+                item["summary"] = explanation.summary  # for the alerts that come later
             except Exception as error:  # an explanation never stops detection
                 self.errors.append(
                     f"{now.isoformat(timespec='seconds')}: explaining {item['id']}: {error}"
@@ -408,6 +437,7 @@ class LiveService:
         log.info(
             "live syslog listener on %s", ", ".join(f"{k} {v}" for k, v in self.listening.items())
         )
+        self.alerts.start(self.clock)
         self._task = asyncio.create_task(self._run())
 
     async def stop(self) -> None:
@@ -421,6 +451,7 @@ class LiveService:
             transport.close()
         self._transports.clear()
         await asyncio.to_thread(self.drain)  # what already arrived is kept
+        await asyncio.to_thread(self.alerts.stop)  # unsent alerts go out at the next start
 
     async def _tcp_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         sender = (writer.get_extra_info("peername") or ("unknown",))[0]
@@ -476,5 +507,6 @@ class LiveService:
             "queued": len(intake.queue),
             "senders": intake.senders_seen()[:50],
             "warnings": [*intake.warnings, *self.errors],
+            "alerts": self.alerts.enabled,
             "last_detection": self.last_detection.isoformat() if self.last_detection else None,
         }

@@ -36,6 +36,9 @@ def _no_llm_from_the_environment(monkeypatch, tmp_path):
     developer has set for their own use are hidden from every test."""
     for name in ("NETLOG_LLM_PROVIDER", "NETLOG_LLM_MODEL", "NETLOG_LLM_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
+    # Nor may a test post to the developer's own chat channel.
+    for name in ("NETLOG_ALERT_SLACK_URL", "NETLOG_ALERT_WEBHOOK_URL"):
+        monkeypatch.delenv(name, raising=False)
     # The commands read a .env file; keep them away from the developer's own.
     monkeypatch.setenv("NETLOG_ENV_FILE", "no-such-file.env")
     # Stored LLM answers go to a database of the test's own, never to data/netlog.db.
