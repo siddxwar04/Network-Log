@@ -887,6 +887,7 @@ def test_health(loaded):
         "version": "0.1.0",
         "database_schema": SCHEMA_VERSION,
         "llm": {"configured": True, "provider": ""},  # the tests' stand-in provider
+        "demo": {"active": False, "stored_explanations": 0},
         "max_upload_bytes": 50 * 1024 * 1024,
         "stages": list(STAGES),
     }
@@ -912,14 +913,19 @@ def test_the_documentation_lists_every_endpoint_with_a_description(loaded):
         ("GET", base + "/status"),
         ("GET", base + "/events"),
         ("GET", base + "/templates"),
+        ("GET", base + "/lines"),
         ("GET", base + "/incidents"),
         ("GET", base + "/summary"),
         ("GET", incident),
         ("GET", incident + "/explanation"),
         ("POST", incident + "/explanation/regenerate"),
         ("GET", incident + "/timeline"),
+        ("GET", incident + "/postmortem"),
         ("GET", "/api/demo/scenarios"),
         ("POST", "/api/demo/scenarios/{name}"),
+        ("GET", "/api/rules"),
+        ("PATCH", "/api/rules/{name}"),
+        ("GET", "/api/live"),
     }
     for (method, path), details in endpoints.items():
         assert details.get("summary"), (method, path)
@@ -1030,3 +1036,68 @@ def test_events_can_be_limited_to_lines_that_were_not_understood(client):
     assert {e["parse_status"] for e in unparsed["items"]} == {"unparsed"}
     assert client.get(path, params={"parse_status": "parsed"}).json()["total"] == 31
     assert_error(client.get(path, params={"parse_status": "maybe"}), 422, "invalid_request")
+
+
+# --- Lines around a line ------------------------------------------------------------------
+
+
+def test_lines_around_a_line_come_in_file_order_with_the_line_in_the_middle(loaded, cascade):
+    upload_id, _ = cascade
+    body = loaded.get(f"/api/uploads/{upload_id}/lines?around=2260&context=2").json()
+
+    assert body["around"] == 2260 and body["context"] == 2
+    assert [line["line"] for line in body["lines"]] == [2258, 2259, 2260, 2261, 2262]
+    middle = body["lines"][2]
+    assert "%LINK-3-UPDOWN" in middle["text"] and middle["host"] == "R1"
+    assert middle["kind"] == "link"
+
+
+def test_lines_around_the_first_line_do_not_go_below_line_one(loaded, cascade):
+    upload_id, _ = cascade
+    body = loaded.get(f"/api/uploads/{upload_id}/lines?around=1&context=3").json()
+
+    assert [line["line"] for line in body["lines"]] == [1, 2, 3, 4]
+
+
+def test_lines_around_refuses_more_context_than_the_setting_allows(loaded, cascade):
+    upload_id, _ = cascade
+
+    error = assert_error(
+        loaded.get(f"/api/uploads/{upload_id}/lines?around=10&context=11"), 400, "too_much_context"
+    )
+    assert "10" in error["message"]
+    assert_error(loaded.get(f"/api/uploads/{upload_id}/lines?around=0"), 422, "invalid_request")
+    assert_error(loaded.get("/api/uploads/999/lines?around=5"), 404, "upload_not_found")
+
+
+def test_every_demo_incident_opens_and_every_citation_points_to_a_line_it_returns(tmp_path):
+    """What the incident page needs from every demo scenario: the incident opens, and each
+    line number a statement cites comes back with the explanation, so clicking it finds
+    the line."""
+    with TestClient(build(tmp_path)) as client:
+        names = [item["name"] for item in client.get("/api/demo/scenarios").json()["items"]]
+        names = [name for name in names if not name.endswith("_50k")]  # the big one is slow
+        assert len(names) >= 8
+        opened = 0
+        for name in names:
+            upload_id = client.post(f"/api/demo/scenarios/{name}").json()["id"]
+            assert wait(client, upload_id)["stage"] == "done", name
+            incidents = client.get(f"/api/uploads/{upload_id}/incidents").json()["items"]
+            for item in incidents:
+                base = f"/api/uploads/{upload_id}/incidents/{item['id']}"
+                assert client.get(base).status_code == 200
+                for mode in ("junior", "senior"):
+                    explanation = client.get(f"{base}/explanation?mode={mode}").json()
+                    returned = {line["line"] for line in explanation["cited_lines"]}
+                    statements = [
+                        *explanation["timeline"], *explanation["hypotheses"],
+                        *explanation["impact"],
+                    ]  # fmt: skip
+                    cited = {
+                        line
+                        for statement in statements
+                        for line in [*statement["lines"], *statement.get("against_lines", [])]
+                    }
+                    assert cited and cited <= returned, (name, item["id"], mode)
+                opened += 1
+        assert opened >= 8

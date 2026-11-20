@@ -33,18 +33,31 @@ from fastapi import FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from netlog import __version__
 from netlog.api.pipeline import STAGES, Job, PipelineRunner
 from netlog.config import load_config
-from netlog.detection.rules import LEVELS
+from netlog.detection.rules import (
+    LEVELS,
+    Rule,
+    RuleError,
+    RuleSet,
+    event_keys_of,
+    load_rule_set,
+    user_rules_path,
+    with_override,
+)
 from netlog.ingestion.reader import looks_binary
+from netlog.live.service import LiveService, live_enabled
 from netlog.llm.provider import Provider
 from netlog.llm.settings import LLMSettings, llm_settings, load_env_file
+from netlog.llm.stored import load_stored, stored_path
 from netlog.parsers.syslog import parse_timezone
 from netlog.report.build import build_report, explanation_json, to_json
 from netlog.report.explain import explain_one
+from netlog.report.postmortem import postmortem_markdown
 from netlog.storage.database import Database, EventFilter, Template, Upload, default_db_path
 
 log = logging.getLogger("netlog.api")
@@ -103,13 +116,14 @@ class ApiSettings:
     timeline_max_events: int
     histogram_buckets: int
     workers: int
+    max_context_lines: int = 10
 
 
 def api_settings(config: dict | None = None, db_path: str | Path | None = None) -> ApiSettings:
     settings = (config or load_config())["api"]
     for name in (
         "max_upload_mb", "default_page_size", "max_page_size", "timeline_max_events",
-        "histogram_buckets", "workers",
+        "histogram_buckets", "workers", "max_context_lines",
     ):  # fmt: skip
         if settings[name] <= 0:
             raise ValueError(f"api.{name} must be greater than zero")
@@ -131,6 +145,7 @@ def api_settings(config: dict | None = None, db_path: str | Path | None = None) 
         timeline_max_events=int(settings["timeline_max_events"]),
         histogram_buckets=int(settings["histogram_buckets"]),
         workers=int(settings["workers"]),
+        max_context_lines=int(settings["max_context_lines"]),
     )
 
 
@@ -184,6 +199,46 @@ def template_json(template: Template) -> dict:
         "last_seen": _iso(template.last_seen),
         "hosts": list(template.hosts),
     }
+
+
+def rule_json(rule: Rule, ruleset: RuleSet) -> dict:
+    """One rule as the API shows it: what it looks for, its settings, and where it comes
+    from."""
+    data = {
+        "name": rule.name,
+        "kind": rule.kind,
+        "incident_type": rule.incident_type,
+        "description": rule.description,
+        "enabled": rule.enabled,
+        "severity": rule.severity,
+        "severity_because": rule.severity_because,
+        "event_keys": event_keys_of(rule),
+        "origin": ruleset.origin.get(rule.name, "built-in"),
+        "override": ruleset.overrides.get(rule.name, {}),
+    }
+    if rule.kind == "threshold":
+        data.update(
+            threshold=rule.threshold,
+            window_seconds=rule.window_seconds,
+            group_by=list(rule.group_by),
+        )
+    else:
+        data.update(within_seconds=rule.within_seconds, same=list(rule.same))
+    return data
+
+
+class RuleChange(BaseModel):
+    """The settings of a rule to change. Leave out what should stay as it is."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    severity: Literal["info", "low", "medium", "high", "critical"] | None = None
+    threshold: int | None = Field(None, description="For a threshold rule: how many events.")
+    window_seconds: float | None = Field(None, description="For a threshold rule: within how long.")
+    within_seconds: float | None = Field(
+        None, description="For a sequence or absence rule: the time limit."
+    )
 
 
 def kind_of(event_key: str | None) -> str:
@@ -240,7 +295,17 @@ def create_app(
     config = config or load_config()
     settings = settings or api_settings(config)
     llm = llm or llm_settings(config)
+    # A rule file with a mistake stops the server from starting, with a message naming
+    # the rule, the setting and the problem, rather than running with a rule ignored.
+    for warning in load_rule_set(config=config).warnings:
+        log.warning("rules: %s", warning)
     runner = PipelineRunner(settings.workers)
+    # The live syslog listener runs inside the API when it is switched on.
+    live = (
+        LiveService(settings.db_path, config, llm=llm, provider=provider)
+        if live_enabled(config)
+        else None
+    )
 
     @contextmanager
     def database():
@@ -260,8 +325,14 @@ def create_app(
             )
         if stopped:
             log.warning("%d upload(s) were left unfinished by a previous run", stopped)
-        yield
-        runner.shutdown()
+        if live is not None:
+            await live.start()
+        try:
+            yield
+        finally:
+            if live is not None:
+                await live.stop()
+            runner.shutdown()
 
     app = FastAPI(
         title="netlog API",
@@ -273,15 +344,18 @@ def create_app(
             {"name": "results", "description": "What the pipeline found in an upload."},
             {"name": "incidents", "description": "One incident: facts, explanation, timeline."},
             {"name": "demo", "description": "Built-in scenarios that need no file of your own."},
+            {"name": "rules", "description": "The detection rules in force, and changing them."},
+            {"name": "live", "description": "Messages sent by devices as things happen."},
             {"name": "system", "description": "Whether the API is up."},
         ],
     )
     app.state.runner = runner
+    app.state.live = live
     app.state.settings = settings
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["*"],
     )
 
@@ -447,14 +521,21 @@ def create_app(
     @app.get("/api/health", tags=["system"], summary="Health check")
     def health() -> dict:
         """Says whether the API is up and can reach its database, which LLM provider is
-        configured (never the key), and the upload size limit."""
+        configured (never the key), whether it runs in demo mode, and the upload size
+        limit. With no LLM configured the app is in demo mode: the demo scenarios use the
+        explanations stored with them, other files get the built-in explanations."""
         with database() as db:
             schema = db.schema_version
+        configured = llm.configured or provider is not None
         return {
             "status": "ok",
             "version": __version__,
             "database_schema": schema,
-            "llm": {"configured": llm.configured or provider is not None, "provider": llm.provider},
+            "llm": {"configured": configured, "provider": llm.provider},
+            "demo": {
+                "active": not configured,
+                "stored_explanations": len(load_stored(stored_path(config))),
+            },
             "max_upload_bytes": settings.max_upload_bytes,
             "stages": list(STAGES),
         }
@@ -571,6 +652,12 @@ def create_app(
                     "still_processing",
                     "This upload is still being processed. Delete it when it has finished.",
                 )
+            if upload.source == "live" and live is not None:
+                raise ApiError(
+                    409,
+                    "live_running",
+                    "This is where the live listener stores messages. Stop the listener first.",
+                )
             db.delete_upload(upload_id)
         if upload.stored_name and re.fullmatch(r"[0-9a-f]{32}\.log", upload.stored_name):
             (settings.upload_dir / upload.stored_name).unlink(missing_ok=True)
@@ -624,9 +711,35 @@ def create_app(
             items = [event.model_dump(mode="json") for event in events]
             return page(items, db.count_events(upload_id, where), limit, offset)
 
-    @app.get(
-        "/api/uploads/{upload_id}/templates", tags=["results"], summary="Message patterns"
-    )
+    @app.get("/api/uploads/{upload_id}/lines", tags=["results"], summary="Lines around a line")
+    def lines_around(
+        upload_id: int,
+        around: Annotated[int, Query(ge=1, description="The line number in the file.")],
+        context: Annotated[
+            int, Query(ge=0, description="How many lines to show before and after it.")
+        ] = 3,
+    ) -> dict:
+        """A log line with the lines just before and after it in the uploaded file, so a
+        piece of evidence can be read in its surroundings. Blank lines are not stored, so
+        fewer lines may come back than asked for."""
+        if context > settings.max_context_lines:
+            raise ApiError(
+                400,
+                "too_much_context",
+                f"Ask for at most {settings.max_context_lines} lines on each side.",
+            )
+        with database() as db:
+            need_upload(db, upload_id)
+            numbers = range(max(1, around - context), around + context + 1)
+            events = db.events_by_line(upload_id, numbers)
+        return {
+            "upload_id": upload_id,
+            "around": around,
+            "context": context,
+            "lines": [line_json(event) for event in events],
+        }
+
+    @app.get("/api/uploads/{upload_id}/templates", tags=["results"], summary="Message patterns")
     def list_templates(
         upload_id: int,
         sort: Annotated[
@@ -778,9 +891,7 @@ def create_app(
                 config=config,
             )
             cited = [*explanation.timeline, *explanation.hypotheses, *explanation.impact]
-            numbers = sorted(
-                {line for item in cited for line in [*item.lines, *item.against]}
-            )
+            numbers = sorted({line for item in cited for line in [*item.lines, *item.against]})
             events = db.events_by_line(upload_id, numbers)
         return {
             "upload_id": upload_id,
@@ -806,6 +917,29 @@ def create_app(
         costs a request when an LLM is configured. With none, the built-in explanation is
         returned again: it is the same every time."""
         return explanation_of(upload_id, incident_id, mode, refresh=True)
+
+    @app.get(f"{base}/postmortem", tags=["incidents"], summary="Post-mortem of an incident")
+    def get_postmortem(upload_id: int, incident_id: str, mode: Mode = "senior") -> Response:
+        """The incident as a post-mortem document in Markdown, ready to download: what
+        happened and when, the likely root cause, what was done and should be done, what
+        cannot be determined, a checklist of follow-up actions for the team, and the log
+        lines behind it. It says at the top that it was drafted automatically and needs
+        review. Uses the explanation for the given audience."""
+        with database() as db:
+            upload = need_upload(db, upload_id)
+            incident = need_incident(db, upload_id, incident_id)
+            explanation = explain_one(
+                db, upload_id, incident, db, mode, refresh=False,
+                provider=provider, settings=llm, config=config,
+            )  # fmt: skip
+            text = postmortem_markdown(db, upload, report_of(db, upload), incident_id, explanation)
+        stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", Path(label_of(upload.filename)).stem)[:60] or "log"
+        name = f"postmortem-{stem}-{incident_id}.md"
+        return Response(
+            text,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
 
     @app.get(f"{base}/timeline", tags=["incidents"], summary="Timeline of an incident")
     def get_timeline(upload_id: int, incident_id: str) -> dict:
@@ -852,6 +986,112 @@ def create_app(
             "events": items,
             "total_events": total,
             "truncated": total > len(items),
+        }
+
+    # --- Rules ----------------------------------------------------------------------------
+
+    def ruleset_now():
+        try:
+            return load_rule_set(config=config)
+        except RuleError as error:
+            raise ApiError(500, "rule_file_error", str(error)) from None
+
+    @app.get("/api/rules", tags=["rules"], summary="The detection rules in force")
+    def list_rules() -> dict:
+        """Every detection rule with its settings: the built-in ones, changed or added to by
+        the user's rule file (`[rules] user_file`). `origin` says where each comes from,
+        and `override` what the user file changes. `warnings` lists possible typos, such
+        as a message type no parser produces."""
+        ruleset = ruleset_now()
+        items = [rule_json(rule, ruleset) for rule in ruleset.rules]
+        return {
+            **page(items, len(items), len(items), 0),
+            "user_file": str(ruleset.user_file or user_rules_path(config) or ""),
+            "warnings": ruleset.warnings,
+            "critical": {
+                "devices": ruleset.critical_devices,
+                "interfaces": ruleset.critical_interfaces,
+            },
+        }
+
+    @app.patch("/api/rules/{name}", tags=["rules"], summary="Change a rule's settings")
+    def change_rule(name: str, change: RuleChange) -> dict:
+        """Change a rule's threshold, window, severity, or switch it on or off. The change
+        is written to the user's rule file as an [[override]] and applies to analyses
+        started from now on; results already shown stay as they were. A value that does
+        not fit the rule is refused with a message saying why, and the file is left as
+        it was."""
+        path = user_rules_path(config)
+        if path is None:
+            raise ApiError(409, "no_rule_file", "No user rule file is set in [rules] user_file.")
+        ruleset = ruleset_now()
+        if ruleset.by_name(name) is None:
+            raise ApiError(404, "rule_not_found", f"There is no rule named {name!r}.")
+        wanted = {**ruleset.overrides.get(name, {}), **change.model_dump(exclude_none=True)}
+        before = path.read_text(encoding="utf-8") if path.is_file() else ""
+        after = with_override(before, name, wanted)
+        candidate = path.with_name(path.name + ".checking")
+        try:
+            candidate.parent.mkdir(parents=True, exist_ok=True)
+            candidate.write_text(after, encoding="utf-8")
+            checked = load_rule_set(candidate, config)
+        except RuleError as error:
+            raise ApiError(400, "invalid_rule_change", str(error)) from None
+        finally:
+            candidate.unlink(missing_ok=True)
+        path.write_text(after, encoding="utf-8")
+        checked.user_file = path
+        return rule_json(checked.by_name(name), checked)
+
+    # --- Live ------------------------------------------------------------------------------
+
+    @app.get("/api/live", tags=["live"], summary="The live syslog listener")
+    def live_status() -> dict:
+        """Whether the live listener is running and where it listens, how many messages
+        came in and why any were dropped, the current rate, the senders seen, and the live
+        incidents: open ones first, then recently closed. Each incident opens on the
+        ordinary incident page under the live upload's id."""
+        if live is None:
+            return {"enabled": False}
+        status = live.status()
+        with database() as db:
+            upload = db.get_upload(live.upload_id) if live.upload_id else None
+            items = db.live_incidents(live.upload_id) if upload else []
+            entries = (
+                {e["id"]: e for e in to_json(report_of(db, upload))["incidents"]} if items else {}
+            )
+        incidents = []
+        for item in items:
+            entry = entries.get(item["id"])
+            if entry is None:
+                continue
+            incidents.append(
+                {
+                    **{key: entry[key] for key in (
+                        "id", "headline", "title", "severity", "severity_reason", "start",
+                        "end", "duration_seconds", "devices", "root_cause", "confidence",
+                        "confidence_reason",
+                    )},
+                    "findings": len(entry["findings"]),
+                    "state": item["state"],
+                    "opened_at": _iso(item["opened_at"]),
+                    "changed_at": _iso(item["changed_at"]),
+                    "closed_at": _iso(item["closed_at"]),
+                }
+            )  # fmt: skip
+        incidents.sort(key=lambda i: (i["state"] != "open", i["closed_at"] or "", i["opened_at"]))
+        open_ones = [i for i in incidents if i["state"] == "open"]
+        closed = sorted(
+            (i for i in incidents if i["state"] == "closed"),
+            key=lambda i: i["closed_at"],
+            reverse=True,
+        )
+        return {
+            "enabled": True,
+            **status,
+            "lines": upload.line_count if upload else 0,
+            "open_incidents": open_ones,
+            "closed_incidents": closed[:20],
         }
 
     # --- Demo scenarios -------------------------------------------------------------------
