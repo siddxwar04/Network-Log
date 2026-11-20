@@ -46,9 +46,7 @@ class _Lines:
             self._finding[item["id"]] = lines
         self._chain = {
             step["id"]: [
-                line
-                for link in step["links"]
-                for line in self._finding.get(link["effect"], [])[:1]
+                line for link in step["links"] for line in self._finding.get(link["effect"], [])[:1]
             ]
             for step in data["chain"]
         }
@@ -73,6 +71,10 @@ def _source(result: ExplanationResult) -> str:
         why = (result.reason or "").splitlines()[0].rstrip(":;.") if result.reason else ""
         return "the built-in templates, not an LLM" + (f" ({why})" if why else "")
     written = f"{result.provider} {result.model}".strip()
+    if result.source == "stored":
+        return (
+            f"an LLM ({written}), stored with the demo scenarios and checked against the evidence"
+        )
     cached = ", read from the cache" if result.source == "cache" else ""
     return f"an LLM ({written}), checked against the evidence{cached}"
 

@@ -44,6 +44,7 @@ from netlog.llm.provider import (
     complete_with_retries,
 )
 from netlog.llm.settings import ENV_KEY, LLMSettings, llm_settings
+from netlog.llm.stored import find_stored
 from netlog.llm.validate import (
     Problem,
     citation_counts,
@@ -79,7 +80,8 @@ class Try:
 class ExplanationResult:
     explanation: Explanation | None
     # Who wrote the explanation: "llm" for a fresh answer, "cache" for a stored one,
-    # "fallback" for the built-in explanation, "none" when there is none.
+    # "stored" for an answer kept with the demo scenarios, "fallback" for the built-in
+    # explanation, "none" when there is none.
     source: str
     mode: str
     # Why there is no explanation, when there is none.
@@ -101,10 +103,11 @@ class ExplanationResult:
 
     @property
     def outcome(self) -> str:
-        """`first_time`, `retry` (passed on the second answer), `cache`, or `fallback`."""
+        """`first_time`, `retry` (passed on the second answer), `cache`, `stored`, or
+        `fallback`."""
         if self.source == "llm":
             return "first_time" if len(self.tries) == 1 else "retry"
-        return "cache" if self.source == "cache" else "fallback"
+        return self.source if self.source in ("cache", "stored") else "fallback"
 
 
 def restore_explanation(explanation: Explanation, redactor: Redactor) -> Explanation:
@@ -332,9 +335,19 @@ def explain_incident(
     The result's `source` says which. When it is "fallback", `reason` says why the LLM's
     explanation was not used. With `use_llm` false no request is made, whatever is
     configured. With `refresh` a stored answer is not used and the LLM is asked again.
+
+    An answer stored with the demo scenarios for this very pack comes first: it was
+    written by an LLM, it is checked again now, and using it costs no request.
     """
     if mode not in MODES:
         raise ValueError(f"unknown audience mode {mode!r}; choose from {', '.join(MODES)}")
+    config = config or load_config()
+    kept = find_stored(pack, mode, config) if use_llm and not refresh else None
+    if kept is not None:
+        explanation, answer = kept
+        return ExplanationResult(
+            explanation, "stored", mode, provider=answer.provider, model=answer.model
+        )
     if use_llm:
         result = explain_pack(
             cache,
