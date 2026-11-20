@@ -196,3 +196,65 @@ prompt = "explain_v1"
 
 [llm.default_models]
 openai = "gpt-6-luna"
+
+[validation]
+# Every explanation an LLM writes is checked before it is shown: its citations must
+# exist, it must not mention anything that is not in the evidence pack, and it must not
+# contradict what the tool decided. An answer that fails is asked for once more, with the
+# reasons; if the second answer fails too, the built-in explanation is used instead.
+#
+# How long each part of an explanation may be, in characters, and how many items a list
+# (timeline, hypotheses, fix steps ...) or one item's citations may hold.
+max_summary_chars = 1200
+max_text_chars = 600
+max_command_chars = 200
+max_items = 30
+max_citations = 40
+
+# The patterns below are regular expressions, matched without regard to case.
+#
+# Wording that says there is no incident. The tool found one before the LLM was asked, so
+# an explanation saying otherwise contradicts it, whatever the logs told the LLM to say.
+denials = [
+    '\bno (?:real |actual |genuine |security )?(?:incidents?|problems?|issues?|attacks?|outages?|faults?|breach(?:es)?) (?:occurred|happened|took place|(?:was|were) (?:found|detected|observed)|to report|exists?)\b',
+    '\b(?:there (?:is|was|were) |this (?:is|was) )(?:no|not an?) (?:real |actual |genuine )?(?:incident|problem|attack|outage|fault|breach)\b',
+    '\bnothing (?:happened|is wrong|was wrong|to report|of concern)\b',
+    '\bfalse (?:positive|alarm)s?\b',
+    '\bno (?:action|response|follow[- ]up) (?:is |was )?(?:needed|required|necessary)\b',
+    '\b(?:can|may|should) (?:safely be|be safely) ignored\b',
+]
+# Wording that claims more certainty than logs can give. Looked for in the summary, the
+# timeline, the hypotheses and the impact.
+overclaims = [
+    '\bthe (?:root |actual |real |true |definite |only )?cause (?:is|was)\b',
+    '\b(?:definitely|certainly|undoubtedly|unquestionably)\b',
+    '\b(?:without|beyond) (?:a |any )?doubt\b',
+    '\b100\s?%',
+    '\b(?:proven|confirmed) (?:root )?cause\b',
+]
+# Commands that change a device's configuration or state wherever they appear. A fix
+# step containing one must be marked "review before running", and a verification
+# command, which is meant to be read-only, must not contain one.
+change_commands = [
+    '\bconf(?:igure)?\s+t(?:erminal)?\b',
+    '\bno\s+shut(?:down)?\b',
+    '\bclear\s+(?:ip\s+)?(?:bgp|ospf|arp|mac|counters|line|crypto|logging|access-list)\b',
+    '\bwrite\s+(?:mem(?:ory)?|erase)\b',
+    '\bcopy\s+\S+\s+startup-config\b',
+    '\bsystemctl\s+(?:restart|stop|start|reload|disable|enable|mask)\b',
+    '\bservice\s+\S+\s+(?:restart|stop|start|reload)\b',
+    '\bip6?tables\s+-[AIDRPFXZ]\b',
+    '\bufw\s+(?:deny|allow|reject|delete|enable|disable|reset)\b',
+    '\b(?:passwd|usermod|userdel|useradd|chage|pkill|kill|rm|chmod|chown)\s+\S',
+]
+# Verbs that change something when a step, a sentence in it or a command begins with
+# them ("Reload the switch"), or when they follow "then", or "and" or "or" with an object
+# after them ("inspect the port and reset the interface").
+change_verbs = [
+    "shut", "shutdown", "reload", "reboot", "restart", "reset", "clear", "block", "ban",
+    "deny", "disable", "enable", "remove", "delete", "erase", "revert", "roll back",
+    "rollback", "restore", "rotate", "revoke", "lock", "expire", "terminate", "kill",
+    "change", "set", "configure", "reconfigure", "add", "apply", "bounce", "power-cycle",
+    "power cycle", "increase", "decrease", "raise", "lower", "extend", "shorten",
+    "update", "upgrade",
+]

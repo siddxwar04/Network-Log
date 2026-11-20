@@ -26,9 +26,18 @@ class Prompt:
     system: str
     user: str  # with {mode} and {pack} still to be filled in
     modes: dict[str, str]
+    # Added to the user message when an answer failed validation and is asked for again;
+    # with {problems} still to be filled in.
+    retry: str = ""
 
-    def render(self, pack: EvidencePack, mode: str) -> tuple[str, str]:
-        """The system text and the user message for one pack."""
+    def render(
+        self, pack: EvidencePack, mode: str, problems: str | None = None
+    ) -> tuple[str, str]:
+        """The system text and the user message for one pack.
+
+        `problems` is given on the second attempt: what the validator found wrong with
+        the first answer. It goes after the evidence block, never inside it.
+        """
         if mode not in self.modes:
             raise ValueError(f"unknown audience mode {mode!r}; choose from {', '.join(MODES)}")
         # The pack is JSON. Writing "<" as its JSON escape keeps it the same data while
@@ -36,6 +45,8 @@ class Prompt:
         # and continue as if it were our instructions.
         data = pack.to_json().replace("<", "\\u003c")
         user = self.user.replace("{mode}", self.modes[mode]).replace("{pack}", data)
+        if problems:
+            user += "\n\n" + self.retry.replace("{problems}", problems.replace("<", "("))
         return self.system, user
 
 
@@ -52,13 +63,15 @@ def load_prompt(name: str = "explain_v1") -> Prompt:
     pieces = _PART.split(text)[1:]  # what comes before the first part is a note
     parts = {pieces[i].strip(): pieces[i + 1].strip() for i in range(0, len(pieces), 2)}
     modes = {key.split(":", 1)[1].strip(): value for key, value in parts.items() if ":" in key}
-    missing = [part for part in ("system", "user") if part not in parts]
+    missing = [part for part in ("system", "user", "retry") if part not in parts]
     missing += [f"mode: {mode}" for mode in MODES if mode not in modes]
     if missing:
         raise ValueError(f"prompt {name} lacks the part(s): {', '.join(missing)}")
     for placeholder in ("{mode}", "{pack}"):
         if placeholder not in parts["user"]:
             raise ValueError(f"prompt {name}: the user part must contain {placeholder}")
+    if "{problems}" not in parts["retry"]:
+        raise ValueError(f"prompt {name}: the retry part must contain {{problems}}")
 
     fingerprint = hashlib.sha256(text.encode("utf-8")).hexdigest()[:8]
     return Prompt(
@@ -66,4 +79,5 @@ def load_prompt(name: str = "explain_v1") -> Prompt:
         system=parts["system"],
         user=parts["user"],
         modes=modes,
+        retry=parts["retry"],
     )

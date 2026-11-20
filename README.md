@@ -192,11 +192,17 @@ See the evidence pack of an incident: the short, numbered case file that is the 
 .venv\Scripts\python -m eval.packs
 ```
 
-Ask an LLM to explain an incident from its evidence pack. This is optional and makes a paid request: copy `.env.example` to `.env`, set `NETLOG_LLM_PROVIDER=openai` and your key in `NETLOG_LLM_API_KEY`, then run the command below. Answers are cached, so the same incident is only paid for once. Without a key the command says so and everything else keeps working. The explanation is not part of the `netlog analyze` report yet.
+Ask an LLM to explain an incident from its evidence pack. This is optional and makes a paid request: copy `.env.example` to `.env`, set `NETLOG_LLM_PROVIDER=openai` and your key in `NETLOG_LLM_API_KEY`, then run the command below. Every answer is checked against the evidence pack before it is shown: its citations must exist, it may not mention anything that is not in the pack, and it may not contradict what the tool decided. An answer that fails is asked for once more; if that fails too, a built-in explanation written from fixed templates is used instead. Answers that pass are cached, so the same incident is only paid for once. Without a key the command prints the built-in explanation and says so. The explanation is not part of the `netlog analyze` report yet.
 
 ```powershell
 .venv\Scripts\python -m eval.explain 02_cascade
 .venv\Scripts\python -m eval.explain 02_cascade --mode junior
+```
+
+Count how the explanations of every sample incident fared against those checks. With a provider configured it makes paid requests, so it does nothing until you add `--yes`:
+
+```powershell
+.venv\Scripts\python -m eval.validity
 ```
 
 See [docs/CLI.md](docs/CLI.md) for every option, the exit codes and the JSON format.
@@ -229,6 +235,7 @@ The `data/scenarios/` folder holds generated logs, each with a `.labels.json` fi
 | `07_device_reload` | A switch is reloaded: minutes of silence, then boot messages |
 | `08_noise` | A normal day with no incident |
 | `08_noise_50k` | The same normal day at 50,000 lines, for checking speed and false alarms |
+| `09_prompt_injection` | The brute force again, with usernames written to talk an LLM into hiding it |
 | `10_overlap` | Two unrelated incidents at the same time |
 
 The noise in these files is built to resemble incidents without being one: a single port going down and up, an administrator shutting a port on purpose, one mistyped password. Detection rules have to tell the difference.
@@ -250,12 +257,13 @@ backend/
     config/          default settings and the built-in rules
     report/          text, Markdown and JSON reports
     correlation/     incidents, topology, cause and effect
-    llm/             the evidence pack, the prompt, the provider adapter and the cache
+    llm/             the evidence pack, the prompt, the provider adapter, the cache,
+                     the validator and the built-in explanations
     redaction/       hiding addresses and names before they leave the machine
     api/             web API                  (planned)
   tests/
 generator/           test log generator
-eval/                scorecard, pack sizes, and a command to try an explanation
+eval/                scorecard, pack sizes, a command to try an explanation, validity counts
 data/scenarios/      generated logs with label files
 docs/                reference documentation
 frontend/            web interface            (planned)

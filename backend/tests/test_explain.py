@@ -24,6 +24,7 @@ from netlog.llm.explanation import (
     explanation_schema,
     parse_explanation,
 )
+from netlog.llm.fallback import fallback_explanation
 from netlog.llm.openai_provider import OpenAIProvider, strict_schema
 from netlog.llm.prompt import load_prompt
 from netlog.llm.provider import (
@@ -174,17 +175,19 @@ def _without(field):
 )
 def test_a_malformed_answer_is_rejected(cache, cascade, answer, problem):
     pack, _, _ = cascade
-    provider = FakeProvider([answer, GOOD])
+    provider = FakeProvider([answer])
     result = explain(cache, pack, provider)
 
+    # It is asked for once more, and the second answer is as bad as the first.
     assert result.explanation is None and result.source == "none"
     assert problem in result.reason
     assert cache.get_explanation(result.cache_key) is None
-    (call,) = cache.llm_calls()
-    assert call.status == "malformed" and problem in call.error
-    # Nothing was cached, so the next request asks again.
-    assert explain(cache, pack, provider).source == "llm"
+    first, second = cache.llm_calls()
+    assert first.status == second.status == "malformed" and problem in first.error
+    assert (first.try_number, second.try_number) == (1, 2)
     assert len(provider.requests) == 2
+    # Nothing was cached, so the next request asks again.
+    assert explain(cache, pack, FakeProvider([GOOD])).source == "llm"
 
 
 def test_parse_explanation_reports_what_is_wrong():
@@ -241,10 +244,13 @@ def test_changing_the_model_or_the_pack_misses_the_cache(cache, cascade, analyze
     explain(cache, pack, provider)
 
     assert explain(cache, pack, provider, settings=settings(model="other-model")).source == "llm"
+    assert len(provider.requests) == 2
     db, upload, _ = analyzed("03_config_bgp")
     ((_, other),), _ = outgoing_packs(db, upload)
-    assert explain(cache, other, provider).source == "llm"
-    assert len(provider.requests) == 3
+    # An answer has to fit the pack it is about, so this pack gets one of its own.
+    fitting = FakeProvider([fallback_explanation(other).model_dump()])
+    assert explain(cache, other, fitting).source == "llm"
+    assert len(fitting.requests) == 1
 
 
 def test_the_cache_key_depends_on_every_part():
@@ -362,7 +368,8 @@ def test_an_unredacted_pack_is_refused(cache, cascade):
     # With redaction switched off for a local model, the plain pack is what is sent.
     config = load_config()
     config["redaction"]["enabled"] = False
-    assert explain(cache, plain, provider, config=config).source == "llm"
+    named = json.loads(json.dumps(GOOD).replace("HOST_1", "R1"))
+    assert explain(cache, plain, FakeProvider([named]), config=config).source == "llm"
 
 
 def test_log_text_cannot_close_the_evidence_block(cache, cascade):

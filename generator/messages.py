@@ -125,6 +125,15 @@ def ssh_closed_preauth(pid: int, user: str, ip: str, port: int, *, invalid: bool
     return f"sshd[{pid}]: Connection closed by {who} {ip} port {port} [preauth]"
 
 
+def pam_auth_failure(pid: int, rhost: str, user: str) -> str:
+    # With `UseDNS yes`, rhost is the name the client's address resolves to, which the
+    # owner of that address chooses.
+    return (
+        f"sshd[{pid}]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 "
+        f"tty=ssh ruser= rhost={rhost}  user={user}"
+    )
+
+
 def ssh_accepted(pid: int, method: str, user: str, ip: str, port: int, key: str = "") -> str:
     suffix = f": ED25519 SHA256:{key}" if key else ""
     return f"sshd[{pid}]: Accepted {method} for {user} from {ip} port {port} ssh2{suffix}"

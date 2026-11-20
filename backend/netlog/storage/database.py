@@ -226,6 +226,13 @@ _MIGRATIONS = (
         created_at    INTEGER NOT NULL
     );
     """,
+    # Version 8: an answer that fails validation is asked for once more. Each request
+    # records whether it was the first or the second try, and a rejected answer is kept
+    # as it was received, so it can be looked at later.
+    """
+    ALTER TABLE llm_calls ADD COLUMN try_number INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE llm_calls ADD COLUMN rejected TEXT;
+    """,
 )
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -334,7 +341,7 @@ class LLMCall:
     provider: str
     model: str
     mode: str
-    status: str  # ok, cached, malformed, error
+    status: str  # ok, cached, malformed, invalid, error
     cache_hit: bool
     error: str | None
     input_tokens: int
@@ -342,6 +349,10 @@ class LLMCall:
     latency_ms: int
     attempts: int
     created_at: datetime
+    # 1 for the first answer asked for, 2 for the one asked for after a rejection.
+    try_number: int = 1
+    # The answer as received, when it was malformed or failed validation.
+    rejected: str | None = None
 
 
 @dataclass
@@ -921,12 +932,14 @@ class Database:
         output_tokens: int = 0,
         latency_ms: int = 0,
         attempts: int = 0,
+        try_number: int = 1,
+        rejected: str | None = None,
     ) -> None:
         with self._db:
             self._db.execute(
                 "INSERT INTO llm_calls (incident_id, cache_key, provider, model, mode, status, "
-                "cache_hit, error, input_tokens, output_tokens, latency_ms, attempts, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "cache_hit, error, input_tokens, output_tokens, latency_ms, attempts, created_at, "
+                "try_number, rejected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     incident_id,
                     cache_key,
@@ -941,6 +954,8 @@ class Database:
                     latency_ms,
                     attempts,
                     _to_micros(datetime.now(UTC)),
+                    try_number,
+                    rejected,
                 ),
             )
 

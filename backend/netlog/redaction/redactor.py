@@ -293,6 +293,28 @@ class Redactor:
         )
 
 
+_VALUE_RE = re.compile(f"(?P<token>{_TOKEN})|(?P<mac>{_MAC})|(?P<ip4>{_IP4})|(?P<ip6>{_IP6})")
+
+
+def find_values(text: str) -> list[tuple[str, str]]:
+    """Every token, MAC address and IP address in a piece of text, as (kind, value).
+
+    The kind is `token`, `mac` or `ip`. Used to check that an explanation mentions only
+    values that are in the evidence pack it was written from.
+    """
+    found = []
+    for match in _VALUE_RE.finditer(text):
+        kind, value = match.lastgroup, match.group(0)
+        if kind in ("ip4", "ip6"):
+            try:
+                ipaddress.ip_address(value)
+            except ValueError:
+                continue  # shaped like an address without being one: 02:46:12
+            kind = "ip"
+        found.append((kind, value))
+    return found
+
+
 def _walk(value, change, structural: bool = True):
     """A copy of `value` with `change` applied to every piece of text that is not in a
     structural field."""
