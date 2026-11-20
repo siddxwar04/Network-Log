@@ -1,0 +1,74 @@
+{
+ "upload_id": 1,
+ "incident_id": "inc-b3dfb3ee42",
+ "start": "2026-03-03T02:36:26.004000Z",
+ "end": "2026-03-03T02:42:56.272000Z",
+ "lanes": [
+  "R2"
+ ],
+ "kinds": [
+  "link",
+  "ospf",
+  "bgp",
+  "login",
+  "config",
+  "dhcp",
+  "system"
+ ],
+ "events": [
+  {
+   "line": 2149,
+   "time": "2026-03-03T02:36:26.004000Z",
+   "host": "R2",
+   "event_key": "SYS-5-CONFIG_I",
+   "kind": "config",
+   "text": "Mar  3 02:36:27 R2 75904: Mar  3 02:36:26.004: %SYS-5-CONFIG_I: Configured from console by jdoe on vty0 (10.10.10.53)",
+   "findings": [
+    226
+   ],
+   "id": 7149,
+   "root_cause": true
+  },
+  {
+   "line": 2153,
+   "time": "2026-03-03T02:36:45.101000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:36:46 R2 75906: Mar  3 02:36:45.101: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Down BGP Notification sent",
+   "findings": [
+    227
+   ],
+   "id": 7153,
+   "root_cause": false
+  },
+  {
+   "line": 2154,
+   "time": "2026-03-03T02:36:45.104000Z",
+   "host": "R2",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:36:46 R2 75907: Mar  3 02:36:45.104: %BGP-3-NOTIFICATION: sent to neighbor 203.0.113.1 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    227
+   ],
+   "id": 7154,
+   "root_cause": false
+  },
+  {
+   "line": 2242,
+   "time": "2026-03-03T02:42:56.272000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:42:58 R2 75910: Mar  3 02:42:56.272: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Up",
+   "findings": [
+    227
+   ],
+   "id": 7242,
+   "root_cause": false
+  }
+ ],
+ "total_events": 4,
+ "truncated": false
+}

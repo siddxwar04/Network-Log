@@ -24,7 +24,7 @@ export interface Page<T> {
 export interface Upload {
   id: number;
   filename: string;
-  source: "file" | "demo";
+  source: "file" | "demo" | "live";
   size_bytes: number;
   status: "processing" | "done" | "failed";
   stage: Stage;
@@ -76,6 +76,9 @@ export interface Health {
   version: string;
   database_schema: number;
   llm: { configured: boolean; provider: string };
+  /** With no LLM set up the app runs in demo mode: the demo scenarios use explanations
+   * an LLM wrote earlier and that are stored with the app. */
+  demo: { active: boolean; stored_explanations: number };
   max_upload_bytes: number;
   stages: Stage[];
 }
@@ -180,3 +183,171 @@ export interface LogEvent {
   message: string;
   parse_status: "parsed" | "partial" | "unparsed";
 }
+
+// --- One incident -------------------------------------------------------------------------
+
+/** What a log line is about, for colors, shapes and the legend. */
+export type EventKind = "link" | "ospf" | "bgp" | "login" | "config" | "dhcp" | "system";
+
+/** One log line as evidence: where it is in the file, when, on which device, and its text.
+ * The text is untrusted: it is only ever shown as plain text. */
+export interface EvidenceLine {
+  line: number;
+  time: string | null;
+  host: string | null;
+  event_key: string | null;
+  kind: EventKind;
+  text: string;
+  findings?: number[];
+}
+
+export interface ChainLink {
+  cause: number;
+  effect: number;
+  prior: string;
+  certainty: "direct" | "plausible" | "possible";
+  explanation: string;
+  delay_seconds: number;
+}
+
+/** One step of the story the rules tell: the root cause at depth 0, its effects below. */
+export interface StoryStep {
+  depth: number;
+  label: string;
+  when: string;
+  certainty: string | null;
+  explanation: string | null;
+  explained: boolean;
+  findings: number[];
+  evidence: { line: number; text: string }[];
+}
+
+export interface FindingDetail {
+  id: number;
+  incident: string;
+  role: string;
+  severity: Level;
+  severity_reason: string;
+  rule: string;
+  incident_type: string;
+  title: string;
+  host: string | null;
+  start: string;
+  end: string;
+  duration_seconds: number;
+  flags: string[];
+  evidence_count: number;
+  evidence: { line: number; text: string }[];
+}
+
+export interface IncidentDetail extends Omit<IncidentSummary, "findings"> {
+  upload_id: number;
+  alternatives: RootCause[];
+  unknowns: string[];
+  findings: number[];
+  context: number[];
+  chain: ChainLink[];
+  story: StoryStep[];
+  finding_details: FindingDetail[];
+  evidence: EvidenceLine[];
+}
+
+export type Audience = "junior" | "senior";
+
+/** A statement of an explanation and the log lines it rests on. */
+export interface CitedStatement {
+  text: string;
+  lines: number[];
+  evidence: string[];
+}
+
+export interface Hypothesis extends CitedStatement {
+  against_lines: number[];
+  against: string[];
+}
+
+export interface Explanation {
+  upload_id: number;
+  incident_id: string;
+  /** llm: written now by the LLM; cache: an earlier LLM answer; stored: an LLM answer kept
+   * with the demo scenarios; fallback: the built-in templates. */
+  source: "llm" | "cache" | "stored" | "fallback";
+  written_by: string;
+  audience: Audience;
+  provider: string;
+  model: string;
+  fallback_reason: string | null;
+  summary: string;
+  timeline: CitedStatement[];
+  hypotheses: Hypothesis[];
+  impact: CitedStatement[];
+  fix_steps: { text: string; review_before_running: boolean }[];
+  verification_commands: { command: string; purpose: string }[];
+  unknowns: string[];
+  usage: { requests: number; input_tokens: number; output_tokens: number; latency_ms: number };
+  cited_lines: EvidenceLine[];
+}
+
+export interface LinesAround {
+  upload_id: number;
+  around: number;
+  context: number;
+  lines: EvidenceLine[];
+}
+
+/** One event of an incident's timeline: an evidence line that says which findings it
+ * belongs to and whether it is part of the root cause. */
+export interface TimelineEvent extends EvidenceLine {
+  id: number;
+  findings: number[];
+  root_cause: boolean;
+}
+
+export interface IncidentTimeline {
+  upload_id: number;
+  incident_id: string;
+  start: string | null;
+  end: string | null;
+  /** One lane per device, the root-cause device first. */
+  lanes: string[];
+  kinds: EventKind[];
+  events: TimelineEvent[];
+  total_events: number;
+  truncated: boolean;
+}
+
+// --- The live listener --------------------------------------------------------------------
+
+export interface LiveIncident extends IncidentSummary {
+  state: "open" | "closed";
+  opened_at: string;
+  changed_at: string;
+  closed_at: string | null;
+}
+
+export interface LiveStatus {
+  enabled: true;
+  listening: Record<string, string>;
+  upload_id: number;
+  counters: {
+    received: number;
+    accepted: number;
+    stored: number;
+    refused: number;
+    rate_limited: number;
+    oversized: number;
+    not_text: number;
+    malformed: number;
+    dropped: number;
+  };
+  per_minute: number;
+  queued: number;
+  senders: { address: string; messages: number; discarded: number; last_seen: string | null }[];
+  warnings: string[];
+  last_detection: string | null;
+  lines: number;
+  open_incidents: LiveIncident[];
+  closed_incidents: LiveIncident[];
+}
+
+export type Live = LiveStatus | { enabled: false };

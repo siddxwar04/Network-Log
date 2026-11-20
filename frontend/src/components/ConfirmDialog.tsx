@@ -10,6 +10,8 @@ export function ConfirmDialog({
   title,
   children,
   confirmLabel,
+  busyLabel = "Deleting...",
+  tone = "danger",
   busy,
   error,
   onConfirm,
@@ -19,6 +21,8 @@ export function ConfirmDialog({
   title: string;
   children: ReactNode;
   confirmLabel: string;
+  busyLabel?: string;
+  tone?: "danger" | "primary";
   busy?: boolean;
   error?: string;
   onConfirm: () => void;
@@ -43,8 +47,8 @@ export function ConfirmDialog({
               <Button disabled={busy}>Cancel</Button>
             </AlertDialog.Cancel>
             {/* Not AlertDialog.Action: that would close the dialog before the answer is known. */}
-            <Button variant="danger" onClick={onConfirm} disabled={busy}>
-              {busy ? "Deleting..." : confirmLabel}
+            <Button variant={tone} onClick={onConfirm} disabled={busy}>
+              {busy ? busyLabel : confirmLabel}
             </Button>
           </div>
         </AlertDialog.Content>

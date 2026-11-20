@@ -1,0 +1,147 @@
+{
+ "upload_id": 1,
+ "incident_id": "inc-b3dfb3ee42",
+ "source": "fallback",
+ "written_by": "the built-in templates, not an LLM (no LLM provider is configured)",
+ "audience": "senior",
+ "provider": "",
+ "model": "",
+ "fallback_reason": "no LLM provider is configured",
+ "summary": "Likely root cause: The configuration of R2 was changed by jdoe from 10.10.10.53 shortly before the failure (confidence medium). Severity critical. BGP session from R2 to 203.0.113.1 went down.",
+ "timeline": [
+  {
+   "text": "02:36:26 UTC: Configuration of R2 changed by jdoe.",
+   "lines": [
+    2149
+   ],
+   "evidence": [
+    "F1",
+    "E1"
+   ]
+  },
+  {
+   "text": "02:36:45 UTC: BGP session from R2 to 203.0.113.1 went down.",
+   "lines": [
+    2153,
+    2154,
+    2242
+   ],
+   "evidence": [
+    "F2",
+    "E2",
+    "E3",
+    "E4"
+   ]
+  }
+ ],
+ "hypotheses": [
+  {
+   "text": "Likely root cause: The configuration of R2 was changed by jdoe from 10.10.10.53 shortly before the failure. Accounts for 1 of 1 findings; confidence medium.",
+   "lines": [
+    2149,
+    2153
+   ],
+   "evidence": [
+    "F1",
+    "C1"
+   ],
+   "against_lines": [],
+   "against": []
+  }
+ ],
+ "impact": [
+  {
+   "text": "Whatever failed right after the change stayed down until the configuration was corrected.",
+   "lines": [
+    2149,
+    2153,
+    2154,
+    2242
+   ],
+   "evidence": [
+    "F1",
+    "F2"
+   ]
+  },
+  {
+   "text": "Suspect effect: 1 finding, 19.1s later.",
+   "lines": [
+    2153,
+    2154,
+    2242
+   ],
+   "evidence": [
+    "C1",
+    "F2"
+   ]
+  }
+ ],
+ "fix_steps": [
+  {
+   "text": "Ask jdoe what was changed on R2, and why.",
+   "review_before_running": false
+  },
+  {
+   "text": "Compare the running configuration with the last known good one.",
+   "review_before_running": false
+  },
+  {
+   "text": "Revert the change if the comparison shows that it caused the failure.",
+   "review_before_running": true
+  }
+ ],
+ "verification_commands": [
+  {
+   "command": "show archive config differences nvram:startup-config system:running-config",
+   "purpose": "No unexpected differences between the saved and the running configuration."
+  },
+  {
+   "command": "show running-config",
+   "purpose": "The configuration is what was intended."
+  }
+ ],
+ "unknowns": [
+  "Whether the change caused the failure. The logs show only that jdoe changed the configuration of R2 19s before, not what was changed.",
+  "Neighbor addresses not matched to a device in these logs: 203.0.113.1. List them in a topology file to say which device each one is."
+ ],
+ "usage": {
+  "requests": 0,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "latency_ms": 0
+ },
+ "cited_lines": [
+  {
+   "line": 2149,
+   "time": "2026-03-03T02:36:26.004000Z",
+   "host": "R2",
+   "event_key": "SYS-5-CONFIG_I",
+   "kind": "config",
+   "text": "Mar  3 02:36:27 R2 75904: Mar  3 02:36:26.004: %SYS-5-CONFIG_I: Configured from console by jdoe on vty0 (10.10.10.53)"
+  },
+  {
+   "line": 2153,
+   "time": "2026-03-03T02:36:45.101000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:36:46 R2 75906: Mar  3 02:36:45.101: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Down BGP Notification sent"
+  },
+  {
+   "line": 2154,
+   "time": "2026-03-03T02:36:45.104000Z",
+   "host": "R2",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:36:46 R2 75907: Mar  3 02:36:45.104: %BGP-3-NOTIFICATION: sent to neighbor 203.0.113.1 4/0 (hold time expired) 0 bytes"
+  },
+  {
+   "line": 2242,
+   "time": "2026-03-03T02:42:56.272000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:42:58 R2 75910: Mar  3 02:42:56.272: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Up"
+  }
+ ]
+}

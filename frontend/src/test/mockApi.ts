@@ -16,11 +16,12 @@ import type {
 export interface Call {
   method: string;
   path: string;
+  query: URLSearchParams;
   body: BodyInit | null | undefined;
 }
 
 type Answer = { status?: number; body?: unknown } | "unreachable";
-type Handler = (call: Call) => Answer | unknown;
+type Handler = (call: Call) => Answer | unknown | Promise<Answer | unknown>;
 
 /** Replace fetch and XMLHttpRequest. Each route is "METHOD /path" (the query string is
  * ignored), answered by a plain value (sent as JSON with status 200), an `{status, body}`
@@ -29,13 +30,13 @@ type Handler = (call: Call) => Answer | unknown;
 export function mockApi(routes: Record<string, Handler | Answer | object>) {
   const calls: Call[] = [];
 
-  function answer(method: string, input: string, body: BodyInit | null | undefined) {
+  async function answer(method: string, input: string, body: BodyInit | null | undefined) {
     const url = new URL(input, "http://test");
-    const call = { method: method.toUpperCase(), path: url.pathname, body };
+    const call = { method: method.toUpperCase(), path: url.pathname, query: url.searchParams, body };
     calls.push(call);
     const route = routes[`${call.method} ${url.pathname}`];
     let result: unknown = route === undefined ? notFound() : route;
-    if (typeof result === "function") result = (result as Handler)(call);
+    if (typeof result === "function") result = await (result as Handler)(call);
     if (result === "unreachable") return "unreachable" as const;
     const { status, body: data } = isAnswer(result) ? result : { status: 200, body: result };
     const code = status ?? 200;
@@ -43,7 +44,7 @@ export function mockApi(routes: Record<string, Handler | Answer | object>) {
   }
 
   const fetchStub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const result = answer(init?.method ?? "GET", typeof input === "string" ? input : input.toString(), init?.body);
+    const result = await answer(init?.method ?? "GET", typeof input === "string" ? input : input.toString(), init?.body);
     if (result === "unreachable") throw new TypeError("Failed to fetch");
     if (result.status === 204) return new Response(null, { status: 204 });
     return new Response(result.text, { status: result.status, headers: { "content-type": "application/json" } });
@@ -63,8 +64,8 @@ export function mockApi(routes: Record<string, Handler | Answer | object>) {
       this.url = url;
     }
     send(body: BodyInit | null) {
-      setTimeout(() => {
-        const result = answer(this.method, this.url, body);
+      setTimeout(async () => {
+        const result = await answer(this.method, this.url, body);
         if (result === "unreachable") {
           this.onerror?.();
           return;
@@ -101,6 +102,7 @@ export const HEALTH: Health = {
   version: "0.1.0",
   database_schema: 9,
   llm: { configured: false, provider: "" },
+  demo: { active: true, stored_explanations: 0 },
   max_upload_bytes: 50 * 1024 * 1024,
   stages: ["queued", "parsing", "templates", "detection", "correlation", "explanation", "done"],
 };

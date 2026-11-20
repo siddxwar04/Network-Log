@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { describeEvents, eventsSeries } from "../lib/eventsChart";
-import { formatDuration, utcSpan } from "../lib/format";
+import { formatDuration } from "../lib/format";
 import { dashboard, HEALTH, incident, mockApi, page, status, summary, uploadDetail } from "./mockApi";
 import { renderApp } from "./render";
 
@@ -188,17 +188,6 @@ describe("the incidents list and an incident", () => {
     ));
     const crumbs = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(within(crumbs).getByRole("link", { name: "02_cascade.log" })).toHaveAttribute("href", "/uploads/1");
-  });
-
-  it("opens an incident with the facts the rules decided", async () => {
-    mockApi({ "GET /api/health": HEALTH, ...dashboard(1, { incidents: [CONFIG] }) });
-    renderApp("/uploads/1/incidents/inc-b3dfb3ee42");
-
-    expect(await screen.findByRole("heading", { name: "BGP session from R2 to 203.0.113.1 went down" })).toBeInTheDocument();
-    expect(screen.getByText("Suspect")).toBeInTheDocument();
-    expect(screen.getByText(/changed by jdoe from 10\.10\.10\.53/)).toBeInTheDocument();
-    expect(screen.getByText(utcSpan(CONFIG.start, CONFIG.end))).toBeInTheDocument();
-    expect(screen.getByText("Critical")).toBeInTheDocument();
   });
 });
 

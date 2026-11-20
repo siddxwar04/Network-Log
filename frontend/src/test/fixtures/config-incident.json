@@ -1,0 +1,225 @@
+{
+ "upload_id": 1,
+ "id": "inc-b3dfb3ee42",
+ "headline": "BGP session from R2 to 203.0.113.1 went down",
+ "title": "BGP session from R2 to 203.0.113.1 went down",
+ "severity": "critical",
+ "severity_reason": "Critical: the most serious finding is \"BGP session from R2 to 203.0.113.1 went down\".",
+ "start": "2026-03-03T02:36:45.101000Z",
+ "end": "2026-03-03T02:36:45.101000Z",
+ "duration_seconds": 0.0,
+ "devices": [
+  "R2"
+ ],
+ "root_cause": {
+  "kind": "config_change",
+  "summary": "The configuration of R2 was changed by jdoe from 10.10.10.53 shortly before the failure",
+  "devices": [
+   "R2"
+  ],
+  "entity": "jdoe",
+  "findings": [
+   226
+  ],
+  "explains": 1
+ },
+ "alternatives": [],
+ "confidence": "medium",
+ "confidence_reason": "the change came shortly before the failure, which makes it the first thing to check, but the logs do not show what was changed",
+ "unknowns": [
+  "Whether the change caused the failure. The logs show only that jdoe changed the configuration of R2 19s before, not what was changed.",
+  "Neighbor addresses not matched to a device in these logs: 203.0.113.1. List them in a topology file to say which device each one is."
+ ],
+ "findings": [
+  227
+ ],
+ "context": [
+  226
+ ],
+ "chain": [
+  {
+   "cause": 226,
+   "effect": 227,
+   "prior": "config_change_before_routing_failure",
+   "certainty": "suspect",
+   "explanation": "The configuration of this device was changed shortly before the failure. That is the first thing to check, though the logs do not show what was changed.",
+   "delay_seconds": 19.097
+  }
+ ],
+ "story": [
+  {
+   "depth": 0,
+   "label": "The configuration of R2 was changed by jdoe from 10.10.10.53 shortly before the failure",
+   "when": "",
+   "certainty": null,
+   "explanation": null,
+   "explained": true,
+   "findings": [
+    226
+   ],
+   "evidence": [
+    {
+     "line": 2149,
+     "text": "Mar  3 02:36:27 R2 75904: Mar  3 02:36:26.004: %SYS-5-CONFIG_I: Configured from console by jdoe on vty0 (10.10.10.53)"
+    }
+   ]
+  },
+  {
+   "depth": 1,
+   "label": "BGP session from R2 to 203.0.113.1 went down",
+   "when": "+19s",
+   "certainty": "suspect",
+   "explanation": "The configuration of this device was changed shortly before the failure. That is the first thing to check, though the logs do not show what was changed.",
+   "explained": true,
+   "findings": [
+    227
+   ],
+   "evidence": [
+    {
+     "line": 2153,
+     "text": "Mar  3 02:36:46 R2 75906: Mar  3 02:36:45.101: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Down BGP Notification sent"
+    },
+    {
+     "line": 2242,
+     "text": "Mar  3 02:42:58 R2 75910: Mar  3 02:42:56.272: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Up"
+    }
+   ]
+  }
+ ],
+ "finding_details": [
+  {
+   "id": 227,
+   "incident": "inc-b3dfb3ee42",
+   "role": "problem",
+   "severity": "critical",
+   "severity_reason": "Critical: a lost BGP session withdraws every route learned from that neighbor.",
+   "rule": "bgp_session_down",
+   "incident_type": "bgp_session_down",
+   "title": "BGP session from R2 to 203.0.113.1 went down",
+   "host": "R2",
+   "group": {
+    "host": "R2",
+    "neighbor_ip": "203.0.113.1"
+   },
+   "start": "2026-03-03T02:36:45.101000Z",
+   "end": "2026-03-03T02:36:45.101000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "BGP Notification sent",
+    "related_reason": "hold time expired",
+    "related_direction": "sent",
+    "related_error_code": "4/0",
+    "related_error_meaning": "Hold timer expired: no keepalive arrived in time",
+    "recovered_at": "2026-03-03T02:42:56.272000+00:00",
+    "recovered_after_seconds": 371.171
+   },
+   "evidence_count": 3,
+   "evidence": [
+    {
+     "line": 2153,
+     "text": "Mar  3 02:36:46 R2 75906: Mar  3 02:36:45.101: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Down BGP Notification sent"
+    },
+    {
+     "line": 2154,
+     "text": "Mar  3 02:36:46 R2 75907: Mar  3 02:36:45.104: %BGP-3-NOTIFICATION: sent to neighbor 203.0.113.1 4/0 (hold time expired) 0 bytes"
+    },
+    {
+     "line": 2242,
+     "text": "Mar  3 02:42:58 R2 75910: Mar  3 02:42:56.272: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Up"
+    }
+   ]
+  },
+  {
+   "id": 226,
+   "incident": "inc-b3dfb3ee42",
+   "role": "context",
+   "severity": "info",
+   "severity_reason": "Info: a configuration change is normal work; it matters when a failure follows it.",
+   "rule": "config_change",
+   "incident_type": "config_change",
+   "title": "Configuration of R2 changed by jdoe",
+   "host": "R2",
+   "group": {
+    "host": "R2",
+    "username": "jdoe"
+   },
+   "start": "2026-03-03T02:36:26.004000Z",
+   "end": "2026-03-03T02:36:26.004000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 300.0,
+    "rate_per_minute": 1.0,
+    "src_ip": "10.10.10.53",
+    "source": "console",
+    "line": "vty0"
+   },
+   "evidence_count": 1,
+   "evidence": [
+    {
+     "line": 2149,
+     "text": "Mar  3 02:36:27 R2 75904: Mar  3 02:36:26.004: %SYS-5-CONFIG_I: Configured from console by jdoe on vty0 (10.10.10.53)"
+    }
+   ]
+  }
+ ],
+ "evidence": [
+  {
+   "line": 2149,
+   "time": "2026-03-03T02:36:26.004000Z",
+   "host": "R2",
+   "event_key": "SYS-5-CONFIG_I",
+   "kind": "config",
+   "text": "Mar  3 02:36:27 R2 75904: Mar  3 02:36:26.004: %SYS-5-CONFIG_I: Configured from console by jdoe on vty0 (10.10.10.53)",
+   "findings": [
+    226
+   ]
+  },
+  {
+   "line": 2153,
+   "time": "2026-03-03T02:36:45.101000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:36:46 R2 75906: Mar  3 02:36:45.101: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Down BGP Notification sent",
+   "findings": [
+    227
+   ]
+  },
+  {
+   "line": 2154,
+   "time": "2026-03-03T02:36:45.104000Z",
+   "host": "R2",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:36:46 R2 75907: Mar  3 02:36:45.104: %BGP-3-NOTIFICATION: sent to neighbor 203.0.113.1 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    227
+   ]
+  },
+  {
+   "line": 2242,
+   "time": "2026-03-03T02:42:56.272000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:42:58 R2 75910: Mar  3 02:42:56.272: %BGP-5-ADJCHANGE: neighbor 203.0.113.1 Up",
+   "findings": [
+    227
+   ]
+  }
+ ]
+}

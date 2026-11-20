@@ -1,0 +1,178 @@
+{
+ "upload_id": 1,
+ "incident_id": "inc-3d5bae5f7e",
+ "start": "2026-03-03T02:35:21.630000Z",
+ "end": "2026-03-03T02:38:42.356000Z",
+ "lanes": [
+  "R1"
+ ],
+ "kinds": [
+  "link",
+  "ospf",
+  "bgp",
+  "login",
+  "config",
+  "dhcp",
+  "system"
+ ],
+ "events": [
+  {
+   "line": 2083,
+   "time": "2026-03-03T02:35:21.630000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:35:20 R1 64397: Mar  3 02:35:21.630: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2083,
+   "root_cause": true
+  },
+  {
+   "line": 2091,
+   "time": "2026-03-03T02:35:42.276000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:35:41 R1 64401: Mar  3 02:35:42.276: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2091,
+   "root_cause": true
+  },
+  {
+   "line": 2099,
+   "time": "2026-03-03T02:35:56.626000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:35:55 R1 64405: Mar  3 02:35:56.626: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2099,
+   "root_cause": true
+  },
+  {
+   "line": 2112,
+   "time": "2026-03-03T02:36:15.979000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:36:14 R1 64409: Mar  3 02:36:15.979: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2112,
+   "root_cause": true
+  },
+  {
+   "line": 2122,
+   "time": "2026-03-03T02:36:35.164000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:36:33 R1 64413: Mar  3 02:36:35.164: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2122,
+   "root_cause": true
+  },
+  {
+   "line": 2133,
+   "time": "2026-03-03T02:36:53.361000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:36:52 R1 64417: Mar  3 02:36:53.361: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2133,
+   "root_cause": true
+  },
+  {
+   "line": 2139,
+   "time": "2026-03-03T02:37:10.364000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:37:09 R1 64421: Mar  3 02:37:10.364: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2139,
+   "root_cause": true
+  },
+  {
+   "line": 2143,
+   "time": "2026-03-03T02:37:28.999000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:37:27 R1 64425: Mar  3 02:37:28.999: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2143,
+   "root_cause": true
+  },
+  {
+   "line": 2152,
+   "time": "2026-03-03T02:37:43.177000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:37:41 R1 64429: Mar  3 02:37:43.177: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2152,
+   "root_cause": true
+  },
+  {
+   "line": 2162,
+   "time": "2026-03-03T02:38:03.215000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:38:02 R1 64433: Mar  3 02:38:03.215: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2162,
+   "root_cause": true
+  },
+  {
+   "line": 2173,
+   "time": "2026-03-03T02:38:24.132000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:38:22 R1 64437: Mar  3 02:38:24.132: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2173,
+   "root_cause": true
+  },
+  {
+   "line": 2186,
+   "time": "2026-03-03T02:38:42.356000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:38:41 R1 64441: Mar  3 02:38:42.356: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down",
+   "findings": [
+    71
+   ],
+   "id": 2186,
+   "root_cause": true
+  }
+ ],
+ "total_events": 12,
+ "truncated": false
+}

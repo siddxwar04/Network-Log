@@ -1,9 +1,15 @@
 // Every request to the netlog API goes through here, so errors look the same everywhere.
 
 import type {
+  Audience,
   DemoScenario,
+  Explanation,
   Health,
+  IncidentDetail,
   IncidentSummary,
+  IncidentTimeline,
+  LinesAround,
+  Live,
   LogEvent,
   Page,
   PipelineStatus,
@@ -133,6 +139,35 @@ export const api = {
   deleteUpload: (id: number) => request<void>(`/api/uploads/${id}`, { method: "DELETE" }),
 
   uploadFile: sendFile,
+
+  incident: (id: number | string, incidentId: string) =>
+    request<IncidentDetail>(`/api/uploads/${id}/incidents/${encodeURIComponent(incidentId)}`),
+
+  explanation: (id: number | string, incidentId: string, mode: Audience) =>
+    request<Explanation>(
+      `/api/uploads/${id}/incidents/${encodeURIComponent(incidentId)}/explanation?mode=${mode}`,
+    ),
+
+  regenerate: (id: number | string, incidentId: string, mode: Audience) =>
+    request<Explanation>(
+      `/api/uploads/${id}/incidents/${encodeURIComponent(incidentId)}/explanation/regenerate?mode=${mode}`,
+      { method: "POST" },
+    ),
+
+  timeline: (id: number | string, incidentId: string) =>
+    request<IncidentTimeline>(
+      `/api/uploads/${id}/incidents/${encodeURIComponent(incidentId)}/timeline`,
+    ),
+
+  /** Where the post-mortem of an incident downloads from. A plain link: the browser
+   * saves the file itself. */
+  postmortemUrl: (id: number | string, incidentId: string, mode: Audience) =>
+    `${BASE}/api/uploads/${id}/incidents/${encodeURIComponent(incidentId)}/postmortem?mode=${mode}`,
+
+  linesAround: (id: number | string, line: number, context = 3) =>
+    request<LinesAround>(`/api/uploads/${id}/lines?around=${line}&context=${context}`),
+
+  live: () => request<Live>("/api/live"),
 
   demos: () => request<Page<DemoScenario>>("/api/demo/scenarios?limit=100"),
 

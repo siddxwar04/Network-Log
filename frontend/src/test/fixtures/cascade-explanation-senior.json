@@ -1,0 +1,436 @@
+{
+ "upload_id": 1,
+ "incident_id": "inc-6f861a94c9",
+ "source": "fallback",
+ "written_by": "the built-in templates, not an LLM (no LLM provider is configured)",
+ "audience": "senior",
+ "provider": "",
+ "model": "",
+ "fallback_reason": "no LLM provider is configured",
+ "summary": "Likely root cause: Interface GigabitEthernet0/1 on R1 was down for 8m 36s (confidence high). Severity critical. BGP session from R1 to 10.255.0.2 went down, with 11 related findings on R1, R2, R3, R4.",
+ "timeline": [
+  {
+   "text": "02:46:11 UTC: Interface GigabitEthernet0/1 on R1 was down for 8m 36s.",
+   "lines": [
+    2260,
+    2400
+   ],
+   "evidence": [
+    "F1",
+    "E1",
+    "E7"
+   ]
+  },
+  {
+   "text": "02:46:11 UTC: OSPF adjacency from R1 to 10.255.0.2 was lost.",
+   "lines": [
+    2261,
+    2407
+   ],
+   "evidence": [
+    "F2",
+    "E2",
+    "E8"
+   ]
+  },
+  {
+   "text": "02:46:11 UTC: OSPF adjacency from R1 to 10.255.0.3 was lost.",
+   "lines": [
+    2262
+   ],
+   "evidence": [
+    "F3"
+   ]
+  },
+  {
+   "text": "02:46:11 UTC: OSPF adjacency from R1 to 10.255.0.4 was lost.",
+   "lines": [
+    2263
+   ],
+   "evidence": [
+    "F4"
+   ]
+  },
+  {
+   "text": "02:46:31 UTC: BGP session from R1 to 10.255.0.2 went down.",
+   "lines": [
+    2271,
+    2272
+   ],
+   "evidence": [
+    "F5",
+    "E3",
+    "E4"
+   ]
+  },
+  {
+   "text": "02:46:33 UTC: BGP session from R1 to 10.255.0.4 went down.",
+   "lines": [
+    2273
+   ],
+   "evidence": [
+    "F6"
+   ]
+  },
+  {
+   "text": "02:46:34 UTC: BGP session from R4 to 10.255.0.1 went down.",
+   "lines": [
+    2275
+   ],
+   "evidence": [
+    "F7",
+    "E5"
+   ]
+  },
+  {
+   "text": "02:46:35 UTC: BGP session from R1 to 10.255.0.3 went down.",
+   "lines": [
+    2413
+   ],
+   "evidence": [
+    "F8",
+    "E9"
+   ]
+  },
+  {
+   "text": "02:46:38 UTC: BGP session from R2 to 10.255.0.1 went down.",
+   "lines": [
+    2279
+   ],
+   "evidence": [
+    "F9"
+   ]
+  },
+  {
+   "text": "02:46:39 UTC: BGP session from R3 to 10.255.0.1 went down.",
+   "lines": [
+    2281
+   ],
+   "evidence": [
+    "F10"
+   ]
+  },
+  {
+   "text": "02:46:46 UTC: OSPF adjacency from R3 to 10.255.0.1 was lost.",
+   "lines": [
+    2284
+   ],
+   "evidence": [
+    "F11",
+    "E6"
+   ]
+  },
+  {
+   "text": "02:46:51 UTC: OSPF adjacency from R4 to 10.255.0.1 was lost.",
+   "lines": [
+    2288
+   ],
+   "evidence": [
+    "F12"
+   ]
+  },
+  {
+   "text": "02:46:52 UTC: OSPF adjacency from R2 to 10.255.0.1 was lost.",
+   "lines": [
+    2287
+   ],
+   "evidence": [
+    "F13"
+   ]
+  }
+ ],
+ "hypotheses": [
+  {
+   "text": "Likely root cause: Interface GigabitEthernet0/1 on R1 was down for 8m 36s. Accounts for 12 of 12 findings; confidence high.",
+   "lines": [
+    2260,
+    2261,
+    2262,
+    2263,
+    2271,
+    2273,
+    2275,
+    2279,
+    2281,
+    2284,
+    2287,
+    2288,
+    2400,
+    2413
+   ],
+   "evidence": [
+    "F1",
+    "C1",
+    "C2",
+    "C3",
+    "C4"
+   ],
+   "against_lines": [],
+   "against": []
+  }
+ ],
+ "impact": [
+  {
+   "text": "Everything that used this interface lost its path until the interface came back.",
+   "lines": [
+    2260,
+    2261,
+    2262,
+    2263,
+    2271,
+    2272,
+    2273,
+    2275,
+    2279,
+    2281,
+    2284,
+    2287,
+    2288,
+    2400,
+    2407,
+    2413
+   ],
+   "evidence": [
+    "F1",
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "F6",
+    "F7",
+    "F8",
+    "F9",
+    "F10",
+    "F11",
+    "F12",
+    "F13"
+   ]
+  },
+  {
+   "text": "Direct effect: 3 findings, at once.",
+   "lines": [
+    2261,
+    2262,
+    2263,
+    2407
+   ],
+   "evidence": [
+    "C1",
+    "F2",
+    "F3",
+    "F4"
+   ]
+  },
+  {
+   "text": "Plausible effect: 3 findings, 20.3s to 24.1s later.",
+   "lines": [
+    2271,
+    2272,
+    2273,
+    2413
+   ],
+   "evidence": [
+    "C2",
+    "F5",
+    "F6",
+    "F8"
+   ]
+  },
+  {
+   "text": "Direct effect: 3 findings, 22.6s to 27.4s later.",
+   "lines": [
+    2275,
+    2279,
+    2281
+   ],
+   "evidence": [
+    "C3",
+    "F7",
+    "F9",
+    "F10"
+   ]
+  },
+  {
+   "text": "Direct effect: 3 findings, 34.9s to 40.6s later.",
+   "lines": [
+    2284,
+    2287,
+    2288
+   ],
+   "evidence": [
+    "C4",
+    "F11",
+    "F12",
+    "F13"
+   ]
+  }
+ ],
+ "fix_steps": [
+  {
+   "text": "Look at the status and the error counters of GigabitEthernet0/1 on R1.",
+   "review_before_running": false
+  },
+  {
+   "text": "Inspect the cable and the optic at both ends, and confirm that the device at the other end is powered and its port is not shut.",
+   "review_before_running": false
+  },
+  {
+   "text": "If the port is in the err-disabled state, find out why before bringing it back.",
+   "review_before_running": false
+  },
+  {
+   "text": "Shut and no shut the interface only after the physical checks, and only if it is still down.",
+   "review_before_running": true
+  }
+ ],
+ "verification_commands": [
+  {
+   "command": "show interfaces GigabitEthernet0/1",
+   "purpose": "The interface and the line protocol are both up, and the input error and CRC counters are not rising."
+  },
+  {
+   "command": "show interfaces status err-disabled",
+   "purpose": "The port is not listed."
+  }
+ ],
+ "unknowns": [
+  "Why the interface went down. The logs show that it did, not whether a cable, an optic or the device at the other end was at fault.",
+  "Neighbor addresses not matched to a device in these logs: 10.255.0.2, 10.255.0.3, 10.255.0.4. List them in a topology file to say which device each one is."
+ ],
+ "usage": {
+  "requests": 0,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "latency_ms": 0
+ },
+ "cited_lines": [
+  {
+   "line": 2260,
+   "time": "2026-03-03T02:46:11.699000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:46:12 R1 89085: Mar  3 02:46:11.699: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down"
+  },
+  {
+   "line": 2261,
+   "time": "2026-03-03T02:46:11.719000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:12 R1 89086: Mar  3 02:46:11.719: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.2 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached"
+  },
+  {
+   "line": 2262,
+   "time": "2026-03-03T02:46:11.723000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:12 R1 89087: Mar  3 02:46:11.723: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.3 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached"
+  },
+  {
+   "line": 2263,
+   "time": "2026-03-03T02:46:11.727000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:12 R1 89088: Mar  3 02:46:11.727: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.4 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached"
+  },
+  {
+   "line": 2271,
+   "time": "2026-03-03T02:46:31.997000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:33 R1 89090: Mar  3 02:46:31.997: %BGP-5-ADJCHANGE: neighbor 10.255.0.2 Down BGP Notification sent"
+  },
+  {
+   "line": 2272,
+   "time": "2026-03-03T02:46:32Z",
+   "host": "R1",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:33 R1 89091: Mar  3 02:46:32.000: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.2 4/0 (hold time expired) 0 bytes"
+  },
+  {
+   "line": 2273,
+   "time": "2026-03-03T02:46:33.833000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:34 R1 89092: Mar  3 02:46:33.833: %BGP-5-ADJCHANGE: neighbor 10.255.0.4 Down BGP Notification sent"
+  },
+  {
+   "line": 2275,
+   "time": "2026-03-03T02:46:34.266000Z",
+   "host": "R4",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:35 R4 51513: Mar  3 02:46:34.266: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent"
+  },
+  {
+   "line": 2279,
+   "time": "2026-03-03T02:46:38.988000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:37 R2 22750: Mar  3 02:46:38.988: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent"
+  },
+  {
+   "line": 2281,
+   "time": "2026-03-03T02:46:39.119000Z",
+   "host": "R3",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:37 R3 64326: Mar  3 02:46:39.119: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent"
+  },
+  {
+   "line": 2284,
+   "time": "2026-03-03T02:46:46.555000Z",
+   "host": "R3",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:45 R3 64328: Mar  3 02:46:46.555: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired"
+  },
+  {
+   "line": 2287,
+   "time": "2026-03-03T02:46:52.302000Z",
+   "host": "R2",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:51 R2 22752: Mar  3 02:46:52.302: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired"
+  },
+  {
+   "line": 2288,
+   "time": "2026-03-03T02:46:51.316000Z",
+   "host": "R4",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:52 R4 51515: Mar  3 02:46:51.316: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired"
+  },
+  {
+   "line": 2400,
+   "time": "2026-03-03T02:54:47.374000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:54:48 R1 89100: Mar  3 02:54:47.374: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up"
+  },
+  {
+   "line": 2407,
+   "time": "2026-03-03T02:55:28.679000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:29 R1 89102: Mar  3 02:55:28.679: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.2 on GigabitEthernet0/1 from LOADING to FULL, Loading Done"
+  },
+  {
+   "line": 2413,
+   "time": "2026-03-03T02:55:43.220000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:44 R1 89105: Mar  3 02:55:43.220: %BGP-5-ADJCHANGE: neighbor 10.255.0.3 Up"
+  }
+ ]
+}

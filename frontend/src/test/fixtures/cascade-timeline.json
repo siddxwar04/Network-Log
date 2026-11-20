@@ -1,0 +1,441 @@
+{
+ "upload_id": 1,
+ "incident_id": "inc-6f861a94c9",
+ "start": "2026-03-03T02:46:11.699000Z",
+ "end": "2026-03-03T02:55:58.510000Z",
+ "lanes": [
+  "R1",
+  "R4",
+  "R2",
+  "R3"
+ ],
+ "kinds": [
+  "link",
+  "ospf",
+  "bgp",
+  "login",
+  "config",
+  "dhcp",
+  "system"
+ ],
+ "events": [
+  {
+   "line": 2260,
+   "time": "2026-03-03T02:46:11.699000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:46:12 R1 89085: Mar  3 02:46:11.699: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down",
+   "findings": [
+    72
+   ],
+   "id": 2260,
+   "root_cause": true
+  },
+  {
+   "line": 2261,
+   "time": "2026-03-03T02:46:11.719000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:12 R1 89086: Mar  3 02:46:11.719: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.2 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached",
+   "findings": [
+    73
+   ],
+   "id": 2261,
+   "root_cause": false
+  },
+  {
+   "line": 2262,
+   "time": "2026-03-03T02:46:11.723000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:12 R1 89087: Mar  3 02:46:11.723: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.3 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached",
+   "findings": [
+    74
+   ],
+   "id": 2262,
+   "root_cause": false
+  },
+  {
+   "line": 2263,
+   "time": "2026-03-03T02:46:11.727000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:12 R1 89088: Mar  3 02:46:11.727: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.4 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached",
+   "findings": [
+    75
+   ],
+   "id": 2263,
+   "root_cause": false
+  },
+  {
+   "line": 2271,
+   "time": "2026-03-03T02:46:31.997000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:33 R1 89090: Mar  3 02:46:31.997: %BGP-5-ADJCHANGE: neighbor 10.255.0.2 Down BGP Notification sent",
+   "findings": [
+    77
+   ],
+   "id": 2271,
+   "root_cause": false
+  },
+  {
+   "line": 2272,
+   "time": "2026-03-03T02:46:32Z",
+   "host": "R1",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:33 R1 89091: Mar  3 02:46:32.000: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.2 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    77
+   ],
+   "id": 2272,
+   "root_cause": false
+  },
+  {
+   "line": 2273,
+   "time": "2026-03-03T02:46:33.833000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:34 R1 89092: Mar  3 02:46:33.833: %BGP-5-ADJCHANGE: neighbor 10.255.0.4 Down BGP Notification sent",
+   "findings": [
+    78
+   ],
+   "id": 2273,
+   "root_cause": false
+  },
+  {
+   "line": 2274,
+   "time": "2026-03-03T02:46:33.836000Z",
+   "host": "R1",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:34 R1 89093: Mar  3 02:46:33.836: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.4 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    78
+   ],
+   "id": 2274,
+   "root_cause": false
+  },
+  {
+   "line": 2275,
+   "time": "2026-03-03T02:46:34.266000Z",
+   "host": "R4",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:35 R4 51513: Mar  3 02:46:34.266: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent",
+   "findings": [
+    79
+   ],
+   "id": 2275,
+   "root_cause": false
+  },
+  {
+   "line": 2276,
+   "time": "2026-03-03T02:46:34.269000Z",
+   "host": "R4",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:35 R4 51514: Mar  3 02:46:34.269: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.1 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    79
+   ],
+   "id": 2276,
+   "root_cause": false
+  },
+  {
+   "line": 2277,
+   "time": "2026-03-03T02:46:35.815000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:36 R1 89094: Mar  3 02:46:35.815: %BGP-5-ADJCHANGE: neighbor 10.255.0.3 Down BGP Notification sent",
+   "findings": [
+    80
+   ],
+   "id": 2277,
+   "root_cause": false
+  },
+  {
+   "line": 2278,
+   "time": "2026-03-03T02:46:35.818000Z",
+   "host": "R1",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:36 R1 89095: Mar  3 02:46:35.818: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.3 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    80
+   ],
+   "id": 2278,
+   "root_cause": false
+  },
+  {
+   "line": 2279,
+   "time": "2026-03-03T02:46:38.988000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:37 R2 22750: Mar  3 02:46:38.988: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent",
+   "findings": [
+    81
+   ],
+   "id": 2279,
+   "root_cause": false
+  },
+  {
+   "line": 2280,
+   "time": "2026-03-03T02:46:38.991000Z",
+   "host": "R2",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:37 R2 22751: Mar  3 02:46:38.991: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.1 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    81
+   ],
+   "id": 2280,
+   "root_cause": false
+  },
+  {
+   "line": 2281,
+   "time": "2026-03-03T02:46:39.119000Z",
+   "host": "R3",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:37 R3 64326: Mar  3 02:46:39.119: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent",
+   "findings": [
+    82
+   ],
+   "id": 2281,
+   "root_cause": false
+  },
+  {
+   "line": 2282,
+   "time": "2026-03-03T02:46:39.122000Z",
+   "host": "R3",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:37 R3 64327: Mar  3 02:46:39.122: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.1 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    82
+   ],
+   "id": 2282,
+   "root_cause": false
+  },
+  {
+   "line": 2284,
+   "time": "2026-03-03T02:46:46.555000Z",
+   "host": "R3",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:45 R3 64328: Mar  3 02:46:46.555: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired",
+   "findings": [
+    83
+   ],
+   "id": 2284,
+   "root_cause": false
+  },
+  {
+   "line": 2288,
+   "time": "2026-03-03T02:46:51.316000Z",
+   "host": "R4",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:52 R4 51515: Mar  3 02:46:51.316: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired",
+   "findings": [
+    84
+   ],
+   "id": 2288,
+   "root_cause": false
+  },
+  {
+   "line": 2287,
+   "time": "2026-03-03T02:46:52.302000Z",
+   "host": "R2",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:51 R2 22752: Mar  3 02:46:52.302: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired",
+   "findings": [
+    85
+   ],
+   "id": 2287,
+   "root_cause": false
+  },
+  {
+   "line": 2400,
+   "time": "2026-03-03T02:54:47.374000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:54:48 R1 89100: Mar  3 02:54:47.374: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up",
+   "findings": [
+    72
+   ],
+   "id": 2400,
+   "root_cause": true
+  },
+  {
+   "line": 2407,
+   "time": "2026-03-03T02:55:28.679000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:29 R1 89102: Mar  3 02:55:28.679: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.2 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    73
+   ],
+   "id": 2407,
+   "root_cause": false
+  },
+  {
+   "line": 2409,
+   "time": "2026-03-03T02:55:29.495000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:30 R1 89103: Mar  3 02:55:29.495: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.3 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    74
+   ],
+   "id": 2409,
+   "root_cause": false
+  },
+  {
+   "line": 2408,
+   "time": "2026-03-03T02:55:31.267000Z",
+   "host": "R2",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:30 R2 22753: Mar  3 02:55:31.267: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    85
+   ],
+   "id": 2408,
+   "root_cause": false
+  },
+  {
+   "line": 2410,
+   "time": "2026-03-03T02:55:32.063000Z",
+   "host": "R3",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:30 R3 64329: Mar  3 02:55:32.063: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    83
+   ],
+   "id": 2410,
+   "root_cause": false
+  },
+  {
+   "line": 2411,
+   "time": "2026-03-03T02:55:33.019000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:34 R1 89104: Mar  3 02:55:33.019: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.4 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    75
+   ],
+   "id": 2411,
+   "root_cause": false
+  },
+  {
+   "line": 2412,
+   "time": "2026-03-03T02:55:33.251000Z",
+   "host": "R4",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:34 R4 51517: Mar  3 02:55:33.251: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    84
+   ],
+   "id": 2412,
+   "root_cause": false
+  },
+  {
+   "line": 2413,
+   "time": "2026-03-03T02:55:43.220000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:44 R1 89105: Mar  3 02:55:43.220: %BGP-5-ADJCHANGE: neighbor 10.255.0.3 Up",
+   "findings": [
+    80
+   ],
+   "id": 2413,
+   "root_cause": false
+  },
+  {
+   "line": 2414,
+   "time": "2026-03-03T02:55:45.688000Z",
+   "host": "R3",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:44 R3 64330: Mar  3 02:55:45.688: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Up",
+   "findings": [
+    82
+   ],
+   "id": 2414,
+   "root_cause": false
+  },
+  {
+   "line": 2417,
+   "time": "2026-03-03T02:55:51.336000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:52 R1 89107: Mar  3 02:55:51.336: %BGP-5-ADJCHANGE: neighbor 10.255.0.2 Up",
+   "findings": [
+    77
+   ],
+   "id": 2417,
+   "root_cause": false
+  },
+  {
+   "line": 2418,
+   "time": "2026-03-03T02:55:53.824000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:52 R2 22754: Mar  3 02:55:53.824: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Up",
+   "findings": [
+    81
+   ],
+   "id": 2418,
+   "root_cause": false
+  },
+  {
+   "line": 2419,
+   "time": "2026-03-03T02:55:58.378000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:59 R1 89108: Mar  3 02:55:58.378: %BGP-5-ADJCHANGE: neighbor 10.255.0.4 Up",
+   "findings": [
+    78
+   ],
+   "id": 2419,
+   "root_cause": false
+  },
+  {
+   "line": 2420,
+   "time": "2026-03-03T02:55:58.510000Z",
+   "host": "R4",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:59 R4 51518: Mar  3 02:55:58.510: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Up",
+   "findings": [
+    79
+   ],
+   "id": 2420,
+   "root_cause": false
+  }
+ ],
+ "total_events": 32,
+ "truncated": false
+}

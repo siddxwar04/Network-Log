@@ -4,7 +4,7 @@
 
 import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "./client";
-import type { Page, UploadListItem } from "./types";
+import type { Audience, Explanation, Page, UploadListItem } from "./types";
 
 declare module "@tanstack/react-query" {
   interface Register {
@@ -42,7 +42,15 @@ export const keys = {
   summary: (id: string | number) => ["summary", String(id)] as const,
   incidents: (id: string | number) => ["incidents", String(id)] as const,
   unparsed: (id: string | number) => ["unparsed", String(id)] as const,
+  incident: (id: string | number, incidentId: string) =>
+    ["incident", String(id), incidentId] as const,
+  explanation: (id: string | number, incidentId: string, mode: Audience) =>
+    ["explanation", String(id), incidentId, mode] as const,
+  lines: (id: string | number, line: number) => ["lines", String(id), line] as const,
+  timeline: (id: string | number, incidentId: string) =>
+    ["timeline", String(id), incidentId] as const,
   demos: ["demos"] as const,
+  live: ["live"] as const,
 };
 
 export function useHealth() {
@@ -95,6 +103,65 @@ export function useUnparsedLines(id: string, enabled: boolean) {
   return useQuery({ queryKey: keys.unparsed(id), queryFn: () => api.unparsedLines(id), enabled });
 }
 
+export function useIncident(id: string, incidentId: string) {
+  return useQuery({
+    queryKey: keys.incident(id, incidentId),
+    queryFn: () => api.incident(id, incidentId),
+    staleTime: Infinity, // what the rules decided does not change
+  });
+}
+
+/** The explanation for one audience. It may take a while when an LLM writes it, so the
+ * page shows the facts first and fills this in when it arrives. */
+export function useExplanation(id: string, incidentId: string, mode: Audience) {
+  return useQuery({
+    queryKey: keys.explanation(id, incidentId, mode),
+    queryFn: () => api.explanation(id, incidentId, mode),
+    staleTime: Infinity,
+  });
+}
+
+/** Ask the LLM again. The new answer replaces the one shown. */
+export function useRegenerate(id: string, incidentId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (mode: Audience) => api.regenerate(id, incidentId, mode),
+    onSuccess: (explanation: Explanation, mode) => {
+      client.setQueryData(keys.explanation(id, incidentId, mode), explanation);
+    },
+  });
+}
+
+export function useTimeline(id: string, incidentId: string) {
+  return useQuery({
+    queryKey: keys.timeline(id, incidentId),
+    queryFn: () => api.timeline(id, incidentId),
+    staleTime: Infinity,
+  });
+}
+
+export function useLinesAround(id: string, line: number, enabled: boolean) {
+  return useQuery({
+    queryKey: keys.lines(id, line),
+    queryFn: () => api.linesAround(id, line),
+    enabled,
+    staleTime: Infinity,
+  });
+}
+
+// How often the live page asks for news.
+export const LIVE_MS = 2000;
+
+/** The live listener's state, asked for again every two seconds while the page is open. */
+export function useLive() {
+  return useQuery({
+    queryKey: keys.live,
+    queryFn: api.live,
+    staleTime: 0,
+    refetchInterval: LIVE_MS,
+  });
+}
+
 export function useDemos() {
   return useQuery({ queryKey: keys.demos, queryFn: api.demos, staleTime: Infinity });
 }
@@ -123,6 +190,9 @@ export function useDeleteUpload() {
     onSettled: (_data, _error, upload) => {
       for (const key of [keys.upload, keys.status, keys.summary, keys.incidents, keys.unparsed]) {
         client.removeQueries({ queryKey: key(upload.id) });
+      }
+      for (const name of ["incident", "explanation", "lines", "timeline"]) {
+        client.removeQueries({ queryKey: [name, String(upload.id)] });
       }
       return client.invalidateQueries({ queryKey: keys.uploads });
     },

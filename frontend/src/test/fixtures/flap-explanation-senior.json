@@ -1,0 +1,118 @@
+{
+ "upload_id": 1,
+ "incident_id": "inc-3d5bae5f7e",
+ "source": "fallback",
+ "written_by": "the built-in templates, not an LLM (no LLM provider is configured)",
+ "audience": "senior",
+ "provider": "",
+ "model": "",
+ "fallback_reason": "no LLM provider is configured",
+ "summary": "Likely root cause: Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s (confidence medium). Severity high.",
+ "timeline": [
+  {
+   "text": "02:35:21 UTC: Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s.",
+   "lines": [
+    2083,
+    2091,
+    2099
+   ],
+   "evidence": [
+    "F1",
+    "E1",
+    "E2",
+    "E3"
+   ]
+  }
+ ],
+ "hypotheses": [
+  {
+   "text": "Likely root cause: Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s. Accounts for 1 of 1 findings; confidence medium.",
+   "lines": [
+    2083,
+    2091,
+    2099
+   ],
+   "evidence": [
+    "F1"
+   ],
+   "against_lines": [],
+   "against": []
+  }
+ ],
+ "impact": [
+  {
+   "text": "Whatever is connected through this interface was interrupted every time it went down.",
+   "lines": [
+    2083,
+    2091,
+    2099
+   ],
+   "evidence": [
+    "F1"
+   ]
+  }
+ ],
+ "fix_steps": [
+  {
+   "text": "Look at the error counters of GigabitEthernet0/2 on R1: rising CRC or input errors point at the cable or the optic.",
+   "review_before_running": false
+  },
+  {
+   "text": "Check that speed and duplex match at both ends.",
+   "review_before_running": false
+  },
+  {
+   "text": "Reseat or replace the cable and the optic, one at a time, and watch whether the flapping stops.",
+   "review_before_running": false
+  },
+  {
+   "text": "Shut the interface if the flapping is disturbing the rest of the network and the link can be spared.",
+   "review_before_running": true
+  }
+ ],
+ "verification_commands": [
+  {
+   "command": "show interfaces GigabitEthernet0/2",
+   "purpose": "The interface is up, and the CRC, input error and interface reset counters are not rising."
+  },
+  {
+   "command": "show logging | include UPDOWN",
+   "purpose": "No new up and down messages for this interface."
+  }
+ ],
+ "unknowns": [
+  "Why the interface went down. The logs show that it did, not whether a cable, an optic or the device at the other end was at fault."
+ ],
+ "usage": {
+  "requests": 0,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "latency_ms": 0
+ },
+ "cited_lines": [
+  {
+   "line": 2083,
+   "time": "2026-03-03T02:35:21.630000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:35:20 R1 64397: Mar  3 02:35:21.630: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down"
+  },
+  {
+   "line": 2091,
+   "time": "2026-03-03T02:35:42.276000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:35:41 R1 64401: Mar  3 02:35:42.276: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down"
+  },
+  {
+   "line": 2099,
+   "time": "2026-03-03T02:35:56.626000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:35:55 R1 64405: Mar  3 02:35:56.626: %LINK-3-UPDOWN: Interface GigabitEthernet0/2, changed state to down"
+  }
+ ]
+}

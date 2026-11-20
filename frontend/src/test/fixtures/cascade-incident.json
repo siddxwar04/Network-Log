@@ -1,0 +1,1234 @@
+{
+ "upload_id": 1,
+ "id": "inc-6f861a94c9",
+ "headline": "Interface GigabitEthernet0/1 on R1 was down for 8m 36s",
+ "title": "BGP session from R1 to 10.255.0.2 went down, with 11 related findings on R1, R2, R3, R4",
+ "severity": "critical",
+ "severity_reason": "Critical: the most serious finding is \"BGP session from R1 to 10.255.0.2 went down\".",
+ "start": "2026-03-03T02:46:11.719000Z",
+ "end": "2026-03-03T02:46:52.302000Z",
+ "duration_seconds": 40.583,
+ "devices": [
+  "R1",
+  "R2",
+  "R3",
+  "R4"
+ ],
+ "root_cause": {
+  "kind": "interface_down",
+  "summary": "Interface GigabitEthernet0/1 on R1 was down for 8m 36s",
+  "devices": [
+   "R1"
+  ],
+  "entity": "GigabitEthernet0/1",
+  "findings": [
+   72
+  ],
+  "explains": 12
+ },
+ "alternatives": [],
+ "confidence": "high",
+ "confidence_reason": "every finding is accounted for, the timing matches how the protocols behave, and 4 devices report it",
+ "unknowns": [
+  "Why the interface went down. The logs show that it did, not whether a cable, an optic or the device at the other end was at fault.",
+  "Neighbor addresses not matched to a device in these logs: 10.255.0.2, 10.255.0.3, 10.255.0.4. List them in a topology file to say which device each one is."
+ ],
+ "findings": [
+  73,
+  74,
+  75,
+  77,
+  78,
+  79,
+  80,
+  81,
+  82,
+  83,
+  84,
+  85
+ ],
+ "context": [
+  72
+ ],
+ "chain": [
+  {
+   "cause": 72,
+   "effect": 73,
+   "prior": "interface_down_drops_ospf_on_it",
+   "certainty": "direct",
+   "explanation": "OSPF runs over that interface, so the router dropped its neighbors there the moment the interface went down.",
+   "delay_seconds": 0.02
+  },
+  {
+   "cause": 72,
+   "effect": 74,
+   "prior": "interface_down_drops_ospf_on_it",
+   "certainty": "direct",
+   "explanation": "OSPF runs over that interface, so the router dropped its neighbors there the moment the interface went down.",
+   "delay_seconds": 0.024
+  },
+  {
+   "cause": 72,
+   "effect": 75,
+   "prior": "interface_down_drops_ospf_on_it",
+   "certainty": "direct",
+   "explanation": "OSPF runs over that interface, so the router dropped its neighbors there the moment the interface went down.",
+   "delay_seconds": 0.028
+  },
+  {
+   "cause": 73,
+   "effect": 77,
+   "prior": "ospf_loss_drops_bgp_on_same_device",
+   "certainty": "plausible",
+   "explanation": "BGP between loopback addresses depends on OSPF for the route to its peer; once the OSPF adjacency was lost the BGP session timed out.",
+   "delay_seconds": 20.278
+  },
+  {
+   "cause": 75,
+   "effect": 78,
+   "prior": "ospf_loss_drops_bgp_on_same_device",
+   "certainty": "plausible",
+   "explanation": "BGP between loopback addresses depends on OSPF for the route to its peer; once the OSPF adjacency was lost the BGP session timed out.",
+   "delay_seconds": 22.106
+  },
+  {
+   "cause": 72,
+   "effect": 79,
+   "prior": "interface_down_silences_router_for_bgp_neighbors",
+   "certainty": "direct",
+   "explanation": "BGP keepalives from the device whose interface failed stopped arriving, so its peers closed their sessions when the hold timer ran out.",
+   "delay_seconds": 22.567
+  },
+  {
+   "cause": 74,
+   "effect": 80,
+   "prior": "ospf_loss_drops_bgp_on_same_device",
+   "certainty": "plausible",
+   "explanation": "BGP between loopback addresses depends on OSPF for the route to its peer; once the OSPF adjacency was lost the BGP session timed out.",
+   "delay_seconds": 24.092
+  },
+  {
+   "cause": 72,
+   "effect": 81,
+   "prior": "interface_down_silences_router_for_bgp_neighbors",
+   "certainty": "direct",
+   "explanation": "BGP keepalives from the device whose interface failed stopped arriving, so its peers closed their sessions when the hold timer ran out.",
+   "delay_seconds": 27.289
+  },
+  {
+   "cause": 72,
+   "effect": 82,
+   "prior": "interface_down_silences_router_for_bgp_neighbors",
+   "certainty": "direct",
+   "explanation": "BGP keepalives from the device whose interface failed stopped arriving, so its peers closed their sessions when the hold timer ran out.",
+   "delay_seconds": 27.42
+  },
+  {
+   "cause": 72,
+   "effect": 83,
+   "prior": "interface_down_silences_router_for_ospf_neighbors",
+   "certainty": "direct",
+   "explanation": "The other routers stopped hearing OSPF hellos from the device whose interface failed, and gave up on it when the 40-second dead timer ran out.",
+   "delay_seconds": 34.856
+  },
+  {
+   "cause": 72,
+   "effect": 84,
+   "prior": "interface_down_silences_router_for_ospf_neighbors",
+   "certainty": "direct",
+   "explanation": "The other routers stopped hearing OSPF hellos from the device whose interface failed, and gave up on it when the 40-second dead timer ran out.",
+   "delay_seconds": 39.617
+  },
+  {
+   "cause": 72,
+   "effect": 85,
+   "prior": "interface_down_silences_router_for_ospf_neighbors",
+   "certainty": "direct",
+   "explanation": "The other routers stopped hearing OSPF hellos from the device whose interface failed, and gave up on it when the 40-second dead timer ran out.",
+   "delay_seconds": 40.603
+  }
+ ],
+ "story": [
+  {
+   "depth": 0,
+   "label": "Interface GigabitEthernet0/1 on R1 was down for 8m 36s",
+   "when": "",
+   "certainty": null,
+   "explanation": null,
+   "explained": true,
+   "findings": [
+    72
+   ],
+   "evidence": [
+    {
+     "line": 2260,
+     "text": "Mar  3 02:46:12 R1 89085: Mar  3 02:46:11.699: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down"
+    },
+    {
+     "line": 2400,
+     "text": "Mar  3 02:54:48 R1 89100: Mar  3 02:54:47.374: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up"
+    }
+   ]
+  },
+  {
+   "depth": 1,
+   "label": "OSPF adjacency lost on R1 (3 findings)",
+   "when": "at once",
+   "certainty": "direct",
+   "explanation": "OSPF runs over that interface, so the router dropped its neighbors there the moment the interface went down.",
+   "explained": true,
+   "findings": [
+    73,
+    74,
+    75
+   ],
+   "evidence": [
+    {
+     "line": 2261,
+     "text": "Mar  3 02:46:12 R1 89086: Mar  3 02:46:11.719: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.2 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached"
+    },
+    {
+     "line": 2262,
+     "text": "Mar  3 02:46:12 R1 89087: Mar  3 02:46:11.723: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.3 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached"
+    }
+   ]
+  },
+  {
+   "depth": 2,
+   "label": "BGP session down on R1 (3 findings)",
+   "when": "+20s to +24s",
+   "certainty": "plausible",
+   "explanation": "BGP between loopback addresses depends on OSPF for the route to its peer; once the OSPF adjacency was lost the BGP session timed out.",
+   "explained": true,
+   "findings": [
+    77,
+    80,
+    78
+   ],
+   "evidence": [
+    {
+     "line": 2271,
+     "text": "Mar  3 02:46:33 R1 89090: Mar  3 02:46:31.997: %BGP-5-ADJCHANGE: neighbor 10.255.0.2 Down BGP Notification sent"
+    },
+    {
+     "line": 2273,
+     "text": "Mar  3 02:46:34 R1 89092: Mar  3 02:46:33.833: %BGP-5-ADJCHANGE: neighbor 10.255.0.4 Down BGP Notification sent"
+    }
+   ]
+  },
+  {
+   "depth": 1,
+   "label": "BGP session down on R2, R3, R4",
+   "when": "+23s to +27s",
+   "certainty": "direct",
+   "explanation": "BGP keepalives from the device whose interface failed stopped arriving, so its peers closed their sessions when the hold timer ran out.",
+   "explained": true,
+   "findings": [
+    79,
+    81,
+    82
+   ],
+   "evidence": [
+    {
+     "line": 2275,
+     "text": "Mar  3 02:46:35 R4 51513: Mar  3 02:46:34.266: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent"
+    },
+    {
+     "line": 2279,
+     "text": "Mar  3 02:46:37 R2 22750: Mar  3 02:46:38.988: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent"
+    }
+   ]
+  },
+  {
+   "depth": 1,
+   "label": "OSPF adjacency lost on R2, R3, R4",
+   "when": "+35s to +41s",
+   "certainty": "direct",
+   "explanation": "The other routers stopped hearing OSPF hellos from the device whose interface failed, and gave up on it when the 40-second dead timer ran out.",
+   "explained": true,
+   "findings": [
+    83,
+    84,
+    85
+   ],
+   "evidence": [
+    {
+     "line": 2284,
+     "text": "Mar  3 02:46:45 R3 64328: Mar  3 02:46:46.555: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired"
+    },
+    {
+     "line": 2288,
+     "text": "Mar  3 02:46:52 R4 51515: Mar  3 02:46:51.316: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired"
+    }
+   ]
+  }
+ ],
+ "finding_details": [
+  {
+   "id": 77,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "critical",
+   "severity_reason": "Critical: a lost BGP session withdraws every route learned from that neighbor.",
+   "rule": "bgp_session_down",
+   "incident_type": "bgp_session_down",
+   "title": "BGP session from R1 to 10.255.0.2 went down",
+   "host": "R1",
+   "group": {
+    "host": "R1",
+    "neighbor_ip": "10.255.0.2"
+   },
+   "start": "2026-03-03T02:46:31.997000Z",
+   "end": "2026-03-03T02:46:31.997000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "BGP Notification sent",
+    "related_reason": "hold time expired",
+    "related_direction": "sent",
+    "related_error_code": "4/0",
+    "related_error_meaning": "Hold timer expired: no keepalive arrived in time",
+    "recovered_at": "2026-03-03T02:55:51.336000+00:00",
+    "recovered_after_seconds": 559.339
+   },
+   "evidence_count": 3,
+   "evidence": [
+    {
+     "line": 2271,
+     "text": "Mar  3 02:46:33 R1 89090: Mar  3 02:46:31.997: %BGP-5-ADJCHANGE: neighbor 10.255.0.2 Down BGP Notification sent"
+    },
+    {
+     "line": 2272,
+     "text": "Mar  3 02:46:33 R1 89091: Mar  3 02:46:32.000: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.2 4/0 (hold time expired) 0 bytes"
+    },
+    {
+     "line": 2417,
+     "text": "Mar  3 02:55:52 R1 89107: Mar  3 02:55:51.336: %BGP-5-ADJCHANGE: neighbor 10.255.0.2 Up"
+    }
+   ]
+  },
+  {
+   "id": 78,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "critical",
+   "severity_reason": "Critical: a lost BGP session withdraws every route learned from that neighbor.",
+   "rule": "bgp_session_down",
+   "incident_type": "bgp_session_down",
+   "title": "BGP session from R1 to 10.255.0.4 went down",
+   "host": "R1",
+   "group": {
+    "host": "R1",
+    "neighbor_ip": "10.255.0.4"
+   },
+   "start": "2026-03-03T02:46:33.833000Z",
+   "end": "2026-03-03T02:46:33.833000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "BGP Notification sent",
+    "related_reason": "hold time expired",
+    "related_direction": "sent",
+    "related_error_code": "4/0",
+    "related_error_meaning": "Hold timer expired: no keepalive arrived in time",
+    "recovered_at": "2026-03-03T02:55:58.378000+00:00",
+    "recovered_after_seconds": 564.545
+   },
+   "evidence_count": 3,
+   "evidence": [
+    {
+     "line": 2273,
+     "text": "Mar  3 02:46:34 R1 89092: Mar  3 02:46:33.833: %BGP-5-ADJCHANGE: neighbor 10.255.0.4 Down BGP Notification sent"
+    },
+    {
+     "line": 2274,
+     "text": "Mar  3 02:46:34 R1 89093: Mar  3 02:46:33.836: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.4 4/0 (hold time expired) 0 bytes"
+    },
+    {
+     "line": 2419,
+     "text": "Mar  3 02:55:59 R1 89108: Mar  3 02:55:58.378: %BGP-5-ADJCHANGE: neighbor 10.255.0.4 Up"
+    }
+   ]
+  },
+  {
+   "id": 79,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "critical",
+   "severity_reason": "Critical: a lost BGP session withdraws every route learned from that neighbor.",
+   "rule": "bgp_session_down",
+   "incident_type": "bgp_session_down",
+   "title": "BGP session from R4 to 10.255.0.1 went down",
+   "host": "R4",
+   "group": {
+    "host": "R4",
+    "neighbor_ip": "10.255.0.1"
+   },
+   "start": "2026-03-03T02:46:34.266000Z",
+   "end": "2026-03-03T02:46:34.266000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "BGP Notification sent",
+    "related_reason": "hold time expired",
+    "related_direction": "sent",
+    "related_error_code": "4/0",
+    "related_error_meaning": "Hold timer expired: no keepalive arrived in time",
+    "recovered_at": "2026-03-03T02:55:58.510000+00:00",
+    "recovered_after_seconds": 564.244
+   },
+   "evidence_count": 3,
+   "evidence": [
+    {
+     "line": 2275,
+     "text": "Mar  3 02:46:35 R4 51513: Mar  3 02:46:34.266: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent"
+    },
+    {
+     "line": 2276,
+     "text": "Mar  3 02:46:35 R4 51514: Mar  3 02:46:34.269: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.1 4/0 (hold time expired) 0 bytes"
+    },
+    {
+     "line": 2420,
+     "text": "Mar  3 02:55:59 R4 51518: Mar  3 02:55:58.510: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Up"
+    }
+   ]
+  },
+  {
+   "id": 80,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "critical",
+   "severity_reason": "Critical: a lost BGP session withdraws every route learned from that neighbor.",
+   "rule": "bgp_session_down",
+   "incident_type": "bgp_session_down",
+   "title": "BGP session from R1 to 10.255.0.3 went down",
+   "host": "R1",
+   "group": {
+    "host": "R1",
+    "neighbor_ip": "10.255.0.3"
+   },
+   "start": "2026-03-03T02:46:35.815000Z",
+   "end": "2026-03-03T02:46:35.815000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "BGP Notification sent",
+    "related_reason": "hold time expired",
+    "related_direction": "sent",
+    "related_error_code": "4/0",
+    "related_error_meaning": "Hold timer expired: no keepalive arrived in time",
+    "recovered_at": "2026-03-03T02:55:43.220000+00:00",
+    "recovered_after_seconds": 547.405
+   },
+   "evidence_count": 3,
+   "evidence": [
+    {
+     "line": 2277,
+     "text": "Mar  3 02:46:36 R1 89094: Mar  3 02:46:35.815: %BGP-5-ADJCHANGE: neighbor 10.255.0.3 Down BGP Notification sent"
+    },
+    {
+     "line": 2278,
+     "text": "Mar  3 02:46:36 R1 89095: Mar  3 02:46:35.818: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.3 4/0 (hold time expired) 0 bytes"
+    },
+    {
+     "line": 2413,
+     "text": "Mar  3 02:55:44 R1 89105: Mar  3 02:55:43.220: %BGP-5-ADJCHANGE: neighbor 10.255.0.3 Up"
+    }
+   ]
+  },
+  {
+   "id": 81,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "critical",
+   "severity_reason": "Critical: a lost BGP session withdraws every route learned from that neighbor.",
+   "rule": "bgp_session_down",
+   "incident_type": "bgp_session_down",
+   "title": "BGP session from R2 to 10.255.0.1 went down",
+   "host": "R2",
+   "group": {
+    "host": "R2",
+    "neighbor_ip": "10.255.0.1"
+   },
+   "start": "2026-03-03T02:46:38.988000Z",
+   "end": "2026-03-03T02:46:38.988000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "BGP Notification sent",
+    "related_reason": "hold time expired",
+    "related_direction": "sent",
+    "related_error_code": "4/0",
+    "related_error_meaning": "Hold timer expired: no keepalive arrived in time",
+    "recovered_at": "2026-03-03T02:55:53.824000+00:00",
+    "recovered_after_seconds": 554.836
+   },
+   "evidence_count": 3,
+   "evidence": [
+    {
+     "line": 2279,
+     "text": "Mar  3 02:46:37 R2 22750: Mar  3 02:46:38.988: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent"
+    },
+    {
+     "line": 2280,
+     "text": "Mar  3 02:46:37 R2 22751: Mar  3 02:46:38.991: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.1 4/0 (hold time expired) 0 bytes"
+    },
+    {
+     "line": 2418,
+     "text": "Mar  3 02:55:52 R2 22754: Mar  3 02:55:53.824: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Up"
+    }
+   ]
+  },
+  {
+   "id": 82,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "critical",
+   "severity_reason": "Critical: a lost BGP session withdraws every route learned from that neighbor.",
+   "rule": "bgp_session_down",
+   "incident_type": "bgp_session_down",
+   "title": "BGP session from R3 to 10.255.0.1 went down",
+   "host": "R3",
+   "group": {
+    "host": "R3",
+    "neighbor_ip": "10.255.0.1"
+   },
+   "start": "2026-03-03T02:46:39.119000Z",
+   "end": "2026-03-03T02:46:39.119000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "BGP Notification sent",
+    "related_reason": "hold time expired",
+    "related_direction": "sent",
+    "related_error_code": "4/0",
+    "related_error_meaning": "Hold timer expired: no keepalive arrived in time",
+    "recovered_at": "2026-03-03T02:55:45.688000+00:00",
+    "recovered_after_seconds": 546.569
+   },
+   "evidence_count": 3,
+   "evidence": [
+    {
+     "line": 2281,
+     "text": "Mar  3 02:46:37 R3 64326: Mar  3 02:46:39.119: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent"
+    },
+    {
+     "line": 2282,
+     "text": "Mar  3 02:46:37 R3 64327: Mar  3 02:46:39.122: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.1 4/0 (hold time expired) 0 bytes"
+    },
+    {
+     "line": 2414,
+     "text": "Mar  3 02:55:44 R3 64330: Mar  3 02:55:45.688: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Up"
+    }
+   ]
+  },
+  {
+   "id": 73,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "high",
+   "severity_reason": "High: a lost OSPF adjacency changes routing inside the network.",
+   "rule": "ospf_adjacency_loss",
+   "incident_type": "ospf_adjacency_loss",
+   "title": "OSPF adjacency from R1 to 10.255.0.2 was lost",
+   "host": "R1",
+   "group": {
+    "host": "R1",
+    "neighbor_ip": "10.255.0.2"
+   },
+   "start": "2026-03-03T02:46:11.719000Z",
+   "end": "2026-03-03T02:46:11.719000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "Interface down or detached",
+    "interface": "GigabitEthernet0/1",
+    "state_to": "DOWN",
+    "recovered_at": "2026-03-03T02:55:28.679000+00:00",
+    "recovered_after_seconds": 556.96
+   },
+   "evidence_count": 2,
+   "evidence": [
+    {
+     "line": 2261,
+     "text": "Mar  3 02:46:12 R1 89086: Mar  3 02:46:11.719: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.2 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached"
+    },
+    {
+     "line": 2407,
+     "text": "Mar  3 02:55:29 R1 89102: Mar  3 02:55:28.679: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.2 on GigabitEthernet0/1 from LOADING to FULL, Loading Done"
+    }
+   ]
+  },
+  {
+   "id": 74,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "high",
+   "severity_reason": "High: a lost OSPF adjacency changes routing inside the network.",
+   "rule": "ospf_adjacency_loss",
+   "incident_type": "ospf_adjacency_loss",
+   "title": "OSPF adjacency from R1 to 10.255.0.3 was lost",
+   "host": "R1",
+   "group": {
+    "host": "R1",
+    "neighbor_ip": "10.255.0.3"
+   },
+   "start": "2026-03-03T02:46:11.723000Z",
+   "end": "2026-03-03T02:46:11.723000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "Interface down or detached",
+    "interface": "GigabitEthernet0/1",
+    "state_to": "DOWN",
+    "recovered_at": "2026-03-03T02:55:29.495000+00:00",
+    "recovered_after_seconds": 557.772
+   },
+   "evidence_count": 2,
+   "evidence": [
+    {
+     "line": 2262,
+     "text": "Mar  3 02:46:12 R1 89087: Mar  3 02:46:11.723: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.3 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached"
+    },
+    {
+     "line": 2409,
+     "text": "Mar  3 02:55:30 R1 89103: Mar  3 02:55:29.495: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.3 on GigabitEthernet0/1 from LOADING to FULL, Loading Done"
+    }
+   ]
+  },
+  {
+   "id": 75,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "high",
+   "severity_reason": "High: a lost OSPF adjacency changes routing inside the network.",
+   "rule": "ospf_adjacency_loss",
+   "incident_type": "ospf_adjacency_loss",
+   "title": "OSPF adjacency from R1 to 10.255.0.4 was lost",
+   "host": "R1",
+   "group": {
+    "host": "R1",
+    "neighbor_ip": "10.255.0.4"
+   },
+   "start": "2026-03-03T02:46:11.727000Z",
+   "end": "2026-03-03T02:46:11.727000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "Interface down or detached",
+    "interface": "GigabitEthernet0/1",
+    "state_to": "DOWN",
+    "recovered_at": "2026-03-03T02:55:33.019000+00:00",
+    "recovered_after_seconds": 561.292
+   },
+   "evidence_count": 2,
+   "evidence": [
+    {
+     "line": 2263,
+     "text": "Mar  3 02:46:12 R1 89088: Mar  3 02:46:11.727: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.4 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached"
+    },
+    {
+     "line": 2411,
+     "text": "Mar  3 02:55:34 R1 89104: Mar  3 02:55:33.019: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.4 on GigabitEthernet0/1 from LOADING to FULL, Loading Done"
+    }
+   ]
+  },
+  {
+   "id": 83,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "high",
+   "severity_reason": "High: a lost OSPF adjacency changes routing inside the network.",
+   "rule": "ospf_adjacency_loss",
+   "incident_type": "ospf_adjacency_loss",
+   "title": "OSPF adjacency from R3 to 10.255.0.1 was lost",
+   "host": "R3",
+   "group": {
+    "host": "R3",
+    "neighbor_ip": "10.255.0.1"
+   },
+   "start": "2026-03-03T02:46:46.555000Z",
+   "end": "2026-03-03T02:46:46.555000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "Dead timer expired",
+    "interface": "GigabitEthernet0/1",
+    "state_to": "DOWN",
+    "recovered_at": "2026-03-03T02:55:32.063000+00:00",
+    "recovered_after_seconds": 525.508
+   },
+   "evidence_count": 2,
+   "evidence": [
+    {
+     "line": 2284,
+     "text": "Mar  3 02:46:45 R3 64328: Mar  3 02:46:46.555: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired"
+    },
+    {
+     "line": 2410,
+     "text": "Mar  3 02:55:30 R3 64329: Mar  3 02:55:32.063: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from LOADING to FULL, Loading Done"
+    }
+   ]
+  },
+  {
+   "id": 84,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "high",
+   "severity_reason": "High: a lost OSPF adjacency changes routing inside the network.",
+   "rule": "ospf_adjacency_loss",
+   "incident_type": "ospf_adjacency_loss",
+   "title": "OSPF adjacency from R4 to 10.255.0.1 was lost",
+   "host": "R4",
+   "group": {
+    "host": "R4",
+    "neighbor_ip": "10.255.0.1"
+   },
+   "start": "2026-03-03T02:46:51.316000Z",
+   "end": "2026-03-03T02:46:51.316000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "Dead timer expired",
+    "interface": "GigabitEthernet0/1",
+    "state_to": "DOWN",
+    "recovered_at": "2026-03-03T02:55:33.251000+00:00",
+    "recovered_after_seconds": 521.935
+   },
+   "evidence_count": 2,
+   "evidence": [
+    {
+     "line": 2288,
+     "text": "Mar  3 02:46:52 R4 51515: Mar  3 02:46:51.316: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired"
+    },
+    {
+     "line": 2412,
+     "text": "Mar  3 02:55:34 R4 51517: Mar  3 02:55:33.251: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from LOADING to FULL, Loading Done"
+    }
+   ]
+  },
+  {
+   "id": 85,
+   "incident": "inc-6f861a94c9",
+   "role": "problem",
+   "severity": "high",
+   "severity_reason": "High: a lost OSPF adjacency changes routing inside the network.",
+   "rule": "ospf_adjacency_loss",
+   "incident_type": "ospf_adjacency_loss",
+   "title": "OSPF adjacency from R2 to 10.255.0.1 was lost",
+   "host": "R2",
+   "group": {
+    "host": "R2",
+    "neighbor_ip": "10.255.0.1"
+   },
+   "start": "2026-03-03T02:46:52.302000Z",
+   "end": "2026-03-03T02:46:52.302000Z",
+   "duration_seconds": 0.0,
+   "strength": 0.25,
+   "flags": [
+    "recovered"
+   ],
+   "metrics": {
+    "count": 1,
+    "peak_count": 1,
+    "threshold": 1,
+    "window_seconds": 600.0,
+    "rate_per_minute": 1.0,
+    "reason": "Dead timer expired",
+    "interface": "GigabitEthernet0/1",
+    "state_to": "DOWN",
+    "recovered_at": "2026-03-03T02:55:31.267000+00:00",
+    "recovered_after_seconds": 518.965
+   },
+   "evidence_count": 2,
+   "evidence": [
+    {
+     "line": 2287,
+     "text": "Mar  3 02:46:51 R2 22752: Mar  3 02:46:52.302: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired"
+    },
+    {
+     "line": 2408,
+     "text": "Mar  3 02:55:30 R2 22753: Mar  3 02:55:31.267: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from LOADING to FULL, Loading Done"
+    }
+   ]
+  },
+  {
+   "id": 72,
+   "incident": "inc-6f861a94c9",
+   "role": "context",
+   "severity": "info",
+   "severity_reason": "Info: one interface down is routine on its own (a device unplugged or switched off); no critical interfaces are configured, so its importance is not known.",
+   "rule": "interface_down",
+   "incident_type": "interface_down",
+   "title": "Interface GigabitEthernet0/1 on R1 was down for 8m 36s",
+   "host": "R1",
+   "group": {
+    "host": "R1",
+    "interface": "GigabitEthernet0/1"
+   },
+   "start": "2026-03-03T02:46:11.699000Z",
+   "end": "2026-03-03T02:54:47.374000Z",
+   "duration_seconds": 515.675,
+   "strength": 1.0,
+   "flags": [],
+   "metrics": {
+    "count": 1,
+    "outage_seconds": 515.675,
+    "within_seconds": 30.0
+   },
+   "evidence_count": 2,
+   "evidence": [
+    {
+     "line": 2260,
+     "text": "Mar  3 02:46:12 R1 89085: Mar  3 02:46:11.699: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down"
+    },
+    {
+     "line": 2400,
+     "text": "Mar  3 02:54:48 R1 89100: Mar  3 02:54:47.374: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up"
+    }
+   ]
+  }
+ ],
+ "evidence": [
+  {
+   "line": 2260,
+   "time": "2026-03-03T02:46:11.699000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:46:12 R1 89085: Mar  3 02:46:11.699: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down",
+   "findings": [
+    72
+   ]
+  },
+  {
+   "line": 2261,
+   "time": "2026-03-03T02:46:11.719000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:12 R1 89086: Mar  3 02:46:11.719: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.2 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached",
+   "findings": [
+    73
+   ]
+  },
+  {
+   "line": 2262,
+   "time": "2026-03-03T02:46:11.723000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:12 R1 89087: Mar  3 02:46:11.723: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.3 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached",
+   "findings": [
+    74
+   ]
+  },
+  {
+   "line": 2263,
+   "time": "2026-03-03T02:46:11.727000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:12 R1 89088: Mar  3 02:46:11.727: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.4 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface down or detached",
+   "findings": [
+    75
+   ]
+  },
+  {
+   "line": 2271,
+   "time": "2026-03-03T02:46:31.997000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:33 R1 89090: Mar  3 02:46:31.997: %BGP-5-ADJCHANGE: neighbor 10.255.0.2 Down BGP Notification sent",
+   "findings": [
+    77
+   ]
+  },
+  {
+   "line": 2272,
+   "time": "2026-03-03T02:46:32Z",
+   "host": "R1",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:33 R1 89091: Mar  3 02:46:32.000: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.2 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    77
+   ]
+  },
+  {
+   "line": 2273,
+   "time": "2026-03-03T02:46:33.833000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:34 R1 89092: Mar  3 02:46:33.833: %BGP-5-ADJCHANGE: neighbor 10.255.0.4 Down BGP Notification sent",
+   "findings": [
+    78
+   ]
+  },
+  {
+   "line": 2274,
+   "time": "2026-03-03T02:46:33.836000Z",
+   "host": "R1",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:34 R1 89093: Mar  3 02:46:33.836: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.4 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    78
+   ]
+  },
+  {
+   "line": 2275,
+   "time": "2026-03-03T02:46:34.266000Z",
+   "host": "R4",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:35 R4 51513: Mar  3 02:46:34.266: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent",
+   "findings": [
+    79
+   ]
+  },
+  {
+   "line": 2276,
+   "time": "2026-03-03T02:46:34.269000Z",
+   "host": "R4",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:35 R4 51514: Mar  3 02:46:34.269: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.1 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    79
+   ]
+  },
+  {
+   "line": 2277,
+   "time": "2026-03-03T02:46:35.815000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:36 R1 89094: Mar  3 02:46:35.815: %BGP-5-ADJCHANGE: neighbor 10.255.0.3 Down BGP Notification sent",
+   "findings": [
+    80
+   ]
+  },
+  {
+   "line": 2278,
+   "time": "2026-03-03T02:46:35.818000Z",
+   "host": "R1",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:36 R1 89095: Mar  3 02:46:35.818: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.3 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    80
+   ]
+  },
+  {
+   "line": 2279,
+   "time": "2026-03-03T02:46:38.988000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:37 R2 22750: Mar  3 02:46:38.988: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent",
+   "findings": [
+    81
+   ]
+  },
+  {
+   "line": 2280,
+   "time": "2026-03-03T02:46:38.991000Z",
+   "host": "R2",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:37 R2 22751: Mar  3 02:46:38.991: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.1 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    81
+   ]
+  },
+  {
+   "line": 2281,
+   "time": "2026-03-03T02:46:39.119000Z",
+   "host": "R3",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:37 R3 64326: Mar  3 02:46:39.119: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent",
+   "findings": [
+    82
+   ]
+  },
+  {
+   "line": 2282,
+   "time": "2026-03-03T02:46:39.122000Z",
+   "host": "R3",
+   "event_key": "BGP-3-NOTIFICATION",
+   "kind": "bgp",
+   "text": "Mar  3 02:46:37 R3 64327: Mar  3 02:46:39.122: %BGP-3-NOTIFICATION: sent to neighbor 10.255.0.1 4/0 (hold time expired) 0 bytes",
+   "findings": [
+    82
+   ]
+  },
+  {
+   "line": 2284,
+   "time": "2026-03-03T02:46:46.555000Z",
+   "host": "R3",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:45 R3 64328: Mar  3 02:46:46.555: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired",
+   "findings": [
+    83
+   ]
+  },
+  {
+   "line": 2287,
+   "time": "2026-03-03T02:46:52.302000Z",
+   "host": "R2",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:51 R2 22752: Mar  3 02:46:52.302: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired",
+   "findings": [
+    85
+   ]
+  },
+  {
+   "line": 2288,
+   "time": "2026-03-03T02:46:51.316000Z",
+   "host": "R4",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:46:52 R4 51515: Mar  3 02:46:51.316: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer expired",
+   "findings": [
+    84
+   ]
+  },
+  {
+   "line": 2400,
+   "time": "2026-03-03T02:54:47.374000Z",
+   "host": "R1",
+   "event_key": "LINK-3-UPDOWN",
+   "kind": "link",
+   "text": "Mar  3 02:54:48 R1 89100: Mar  3 02:54:47.374: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up",
+   "findings": [
+    72
+   ]
+  },
+  {
+   "line": 2407,
+   "time": "2026-03-03T02:55:28.679000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:29 R1 89102: Mar  3 02:55:28.679: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.2 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    73
+   ]
+  },
+  {
+   "line": 2408,
+   "time": "2026-03-03T02:55:31.267000Z",
+   "host": "R2",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:30 R2 22753: Mar  3 02:55:31.267: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    85
+   ]
+  },
+  {
+   "line": 2409,
+   "time": "2026-03-03T02:55:29.495000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:30 R1 89103: Mar  3 02:55:29.495: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.3 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    74
+   ]
+  },
+  {
+   "line": 2410,
+   "time": "2026-03-03T02:55:32.063000Z",
+   "host": "R3",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:30 R3 64329: Mar  3 02:55:32.063: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    83
+   ]
+  },
+  {
+   "line": 2411,
+   "time": "2026-03-03T02:55:33.019000Z",
+   "host": "R1",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:34 R1 89104: Mar  3 02:55:33.019: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.4 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    75
+   ]
+  },
+  {
+   "line": 2412,
+   "time": "2026-03-03T02:55:33.251000Z",
+   "host": "R4",
+   "event_key": "OSPF-5-ADJCHG",
+   "kind": "ospf",
+   "text": "Mar  3 02:55:34 R4 51517: Mar  3 02:55:33.251: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from LOADING to FULL, Loading Done",
+   "findings": [
+    84
+   ]
+  },
+  {
+   "line": 2413,
+   "time": "2026-03-03T02:55:43.220000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:44 R1 89105: Mar  3 02:55:43.220: %BGP-5-ADJCHANGE: neighbor 10.255.0.3 Up",
+   "findings": [
+    80
+   ]
+  },
+  {
+   "line": 2414,
+   "time": "2026-03-03T02:55:45.688000Z",
+   "host": "R3",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:44 R3 64330: Mar  3 02:55:45.688: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Up",
+   "findings": [
+    82
+   ]
+  },
+  {
+   "line": 2417,
+   "time": "2026-03-03T02:55:51.336000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:52 R1 89107: Mar  3 02:55:51.336: %BGP-5-ADJCHANGE: neighbor 10.255.0.2 Up",
+   "findings": [
+    77
+   ]
+  },
+  {
+   "line": 2418,
+   "time": "2026-03-03T02:55:53.824000Z",
+   "host": "R2",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:52 R2 22754: Mar  3 02:55:53.824: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Up",
+   "findings": [
+    81
+   ]
+  },
+  {
+   "line": 2419,
+   "time": "2026-03-03T02:55:58.378000Z",
+   "host": "R1",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:59 R1 89108: Mar  3 02:55:58.378: %BGP-5-ADJCHANGE: neighbor 10.255.0.4 Up",
+   "findings": [
+    78
+   ]
+  },
+  {
+   "line": 2420,
+   "time": "2026-03-03T02:55:58.510000Z",
+   "host": "R4",
+   "event_key": "BGP-5-ADJCHANGE",
+   "kind": "bgp",
+   "text": "Mar  3 02:55:59 R4 51518: Mar  3 02:55:58.510: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Up",
+   "findings": [
+    79
+   ]
+  }
+ ]
+}
