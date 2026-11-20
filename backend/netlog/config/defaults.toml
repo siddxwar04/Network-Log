@@ -381,6 +381,9 @@ timeline_max_events = 2000
 histogram_buckets = 120
 # The most lines of context a request may ask for on each side of one log line.
 max_context_lines = 10
+# The results of the evaluation harness (python -m eval.harness), shown by
+# GET /api/evaluation and the Evaluation page.
+evaluation_results = "eval/results/latest.json"
 # How many pipelines run at the same time. More than one gains little: SQLite lets one
 # writer in at a time.
 workers = 1

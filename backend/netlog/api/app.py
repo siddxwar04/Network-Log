@@ -118,6 +118,7 @@ class ApiSettings:
     histogram_buckets: int
     workers: int
     max_context_lines: int = 10
+    evaluation_results: Path = Path("eval/results/latest.json")
 
 
 def api_settings(config: dict | None = None, db_path: str | Path | None = None) -> ApiSettings:
@@ -147,6 +148,7 @@ def api_settings(config: dict | None = None, db_path: str | Path | None = None) 
         histogram_buckets=int(settings["histogram_buckets"]),
         workers=int(settings["workers"]),
         max_context_lines=int(settings["max_context_lines"]),
+        evaluation_results=Path(settings["evaluation_results"]),
     )
 
 
@@ -396,6 +398,7 @@ def create_app(
             {"name": "rules", "description": "The detection rules in force, and changing them."},
             {"name": "live", "description": "Messages sent by devices as things happen."},
             {"name": "alerts", "description": "Chat messages about serious live incidents."},
+            {"name": "evaluation", "description": "How accurate the tool is on known logs."},
             {"name": "system", "description": "Whether the API is up."},
         ],
     )
@@ -1214,6 +1217,29 @@ def create_app(
                 raise ApiError(404, "silence_not_found", "There is no silence with that id.")
             silence = next(s for s in db.silences() if s["id"] == silence_id)
         return silence_json(silence, now)
+
+    # --- Evaluation ---------------------------------------------------------------------------
+
+    @app.get("/api/evaluation", tags=["evaluation"], summary="The latest accuracy results")
+    def evaluation() -> dict:
+        """The latest results of the evaluation harness: precision, recall and F1 on the
+        held-out, tuned and noise sets, root cause, severity and device accuracy, false
+        alarms, speed, and every miss with its scenario and seed. Made by running
+        `python -m eval.harness`; this only reads the file it wrote."""
+        path = settings.evaluation_results
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raise ApiError(
+                404, "no_results",
+                "No evaluation results yet. Run python -m eval.heldout, then "
+                "python -m eval.harness.",
+            ) from None  # fmt: skip
+        except (OSError, ValueError):
+            data = None
+        if not isinstance(data, dict) or "sets" not in data:
+            raise ApiError(500, "bad_results", "The evaluation results file cannot be read.")
+        return data
 
     # --- Demo scenarios -------------------------------------------------------------------
 

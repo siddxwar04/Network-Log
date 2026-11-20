@@ -930,6 +930,7 @@ def test_the_documentation_lists_every_endpoint_with_a_description(loaded):
         ("POST", "/api/alerts/test"),
         ("POST", "/api/alerts/silences"),
         ("DELETE", "/api/alerts/silences/{silence_id}"),
+        ("GET", "/api/evaluation"),
     }
     for (method, path), details in endpoints.items():
         assert details.get("summary"), (method, path)
