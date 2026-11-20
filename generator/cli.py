@@ -28,13 +28,22 @@ def generate(
     lines: int = 5000,
     start: datetime | None = None,
     hours: float = 6.0,
+    settings: dict | None = None,
+    expect: dict | None = None,
 ) -> tuple[str, dict]:
-    """Return the log text and the label data for one scenario. Same inputs, same output."""
+    """Return the log text and the label data for one scenario. Same inputs, same output.
+
+    `settings` change the scenario (see each scenario's arguments). `expect` changes what
+    the label file says should be found, for a variant the default label does not fit:
+    {"severity": "medium"} or {"severity": {"inc-2": "medium"}} for another severity, or
+    {"nothing": "why"} for a file that is built to fall short of an incident. The
+    generator does not know the detection rules; whoever asks for a variant says what it
+    should give."""
     start = start or datetime.fromisoformat(DEFAULT_START)
     end = start + timedelta(hours=hours)
     rng = random.Random(f"{name}:{seed}")
 
-    built = build(name, rng, start, end, lines)
+    built = build(name, rng, start, end, lines, **(settings or {}))
     rendered = render(built.recs, rng)
 
     incidents = []
@@ -56,6 +65,17 @@ def generate(
             }
         )
 
+    expect = expect or {}
+    if "nothing" in expect:
+        incidents = []
+    elif "severity" in expect:
+        wanted = expect["severity"]
+        for incident in incidents:
+            if isinstance(wanted, str):
+                incident["expected_severity"] = wanted
+            elif incident["id"] in wanted:
+                incident["expected_severity"] = wanted[incident["id"]]
+
     labels = {
         "scenario": name,
         "seed": seed,
@@ -66,6 +86,10 @@ def generate(
         "total_lines": len(rendered.lines),
         "incidents": incidents,
     }
+    if settings:
+        labels["settings"] = dict(settings)
+    if "nothing" in expect:
+        labels["negative"] = expect["nothing"]
     return "\n".join(rendered.lines) + "\n", labels
 
 

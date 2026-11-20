@@ -1,6 +1,11 @@
 """The incident scenarios. Each builds the log lines of one or more known incidents
 and describes them, so the result can be checked against what detection finds.
 
+Some scenarios take settings that change how strong the incident is (how many times a
+port flaps, how many logins are tried) or how many devices it reaches. Their defaults
+give the files in data/scenarios/. The evaluation uses other values to build test files
+the detection rules were never tuned on.
+
 Timers assumed on the simulated network:
   - OSPF: default hello 10s, dead 40s.
   - BGP: keepalive 10s, hold 30s (a common tuning; the default is 60s/180s).
@@ -42,6 +47,11 @@ class Built:
 
 _BRUTE_USERS = ("root", "admin", "ubuntu", "test", "oracle", "postgres", "git", "deploy", "user")
 _PEERS = ("R2", "R3", "R4")
+
+
+def _names(devices) -> str:
+    """R2, R3 and R4"""
+    return devices[0] if len(devices) == 1 else f"{', '.join(devices[:-1])} and {devices[-1]}"
 
 
 def _moment(rng: random.Random, start: datetime, end: datetime) -> datetime:
@@ -111,9 +121,9 @@ def _brute_force(
 # --- Scenarios ---------------------------------------------------------------------------
 
 
-def link_flap(rng, start, end) -> Built:
+def link_flap(rng, start, end, cycles: int = 12) -> Built:
     """1. A server-LAN interface on R1 bounces 12 times in about 5 minutes."""
-    recs = _flap(rng, _moment(rng, start, end), "R1", topo.SERVER_LAN_IF, 12, "inc-1")
+    recs = _flap(rng, _moment(rng, start, end), "R1", topo.SERVER_LAN_IF, cycles, "inc-1")
     incident = Incident(
         id="inc-1",
         type="link_flap",
@@ -122,25 +132,29 @@ def link_flap(rng, start, end) -> Built:
         devices=["R1"],
         expected_severity="high",
         notes="No routing protocol runs on this interface, so nothing else is affected.",
-        facts={"down_transitions": 12},
+        facts={"down_transitions": cycles},
     )
     return Built(recs, [incident])
 
 
-def cascade(rng, start, end) -> Built:
-    """2. R1's interface to the transit LAN fails; OSPF and BGP to R1 drop on R2, R3 and R4."""
+def cascade(rng, start, end, peers: int = 3) -> Built:
+    """2. R1's interface to the transit LAN fails; OSPF and BGP to R1 drop on R2, R3 and R4
+    (or on the first `peers` of them)."""
+    if not 1 <= peers <= len(_PEERS):
+        raise ValueError(f"peers must be from 1 to {len(_PEERS)}")
+    reached = _PEERS[:peers]
     t = _moment(rng, start, end)
     inc, nic, r1 = "inc-1", topo.TRANSIT_IF, topo.LOOPBACK["R1"]
     down_detail = "Neighbor Down: Interface down or detached"
 
     recs = [Rec(t, "R1", m.link(nic, "down"), inc)]
     # R1 knows its own interface is down, so it drops all three adjacencies at once.
-    for i, peer in enumerate(_PEERS):
+    for i, peer in enumerate(reached):
         body = m.ospf_adj(topo.LOOPBACK[peer], nic, "FULL", "DOWN", down_detail)
         recs.append(Rec(t + sec(0.02 + 0.004 * i), "R1", body, inc))
     recs.append(Rec(t + sec(1.0), "R1", m.lineproto(nic, "down"), inc))
 
-    for peer in _PEERS:
+    for peer in reached:
         loop = topo.LOOPBACK[peer]
         # BGP: each side notices when its 30s hold timer runs out, counted from the last
         # keepalive it received, which arrived up to 10s before the failure.
@@ -162,7 +176,7 @@ def cascade(rng, start, end) -> Built:
         Rec(back, "R1", m.link(nic, "up"), inc),
         Rec(back + sec(1.0), "R1", m.lineproto(nic, "up"), inc),
     ]
-    for peer in _PEERS:
+    for peer in reached:
         loop = topo.LOOPBACK[peer]
         full = back + sec(rng.uniform(40, 46))  # OSPF waits 40s on a LAN before forming
         recs += [
@@ -178,9 +192,9 @@ def cascade(rng, start, end) -> Built:
     incident = Incident(
         id=inc,
         type="link_failure",
-        title=f"R1 lost its transit link ({nic}); OSPF and BGP to R1 dropped on R2, R3 and R4",
+        title=f"R1 lost its transit link ({nic}); OSPF and BGP to R1 dropped on {_names(reached)}",
         root_cause={"kind": "link_failure", "device": "R1", "entity": nic},
-        devices=["R1", "R2", "R3", "R4"],
+        devices=["R1", *reached],
         expected_severity="critical",
         notes=(
             "Chain: R1 interface down -> OSPF adjacencies lost -> iBGP sessions lost. "
@@ -227,22 +241,29 @@ def config_bgp(rng, start, end) -> Built:
     return Built(recs, [incident])
 
 
-def brute_force(rng, start, end) -> Built:
+def brute_force(
+    rng, start, end, attempts: int = 400, minutes: float = 12, succeed: bool = True
+) -> Built:
     """4. 400 failed SSH logins on srv1 from one outside address, then a success."""
-    recs = _brute_force(rng, _moment(rng, start, end), 12, 400, True, "inc-1")
+    recs = _brute_force(rng, _moment(rng, start, end), minutes, attempts, succeed, "inc-1")
+    ending = ", ending in a successful login" if succeed else ""
     incident = Incident(
         id="inc-1",
         type="brute_force",
-        title=f"SSH brute force on srv1 from {topo.ATTACKER_IP}, ending in a successful login",
+        title=f"SSH brute force on srv1 from {topo.ATTACKER_IP}{ending}",
         root_cause={"kind": "brute_force", "device": topo.SERVER, "entity": topo.ATTACKER_IP},
         devices=[topo.SERVER],
         expected_severity="critical",
-        facts={"failed_logins": 400, "succeeded": True, "compromised_user": "deploy"},
+        facts={
+            "failed_logins": attempts,
+            "succeeded": succeed,
+            **({"compromised_user": "deploy"} if succeed else {}),
+        },
     )
     return Built(recs, [incident])
 
 
-def dhcp_exhaustion(rng, start, end) -> Built:
+def dhcp_exhaustion(rng, start, end, refused_devices: int = 45) -> Built:
     """5. A burst of new devices takes the last addresses; later requests get no lease."""
     t = _moment(rng, start, end)
     inc, host, nic = "inc-1", topo.DHCP_SERVER, topo.DHCP_IF
@@ -263,7 +284,7 @@ def dhcp_exhaustion(rng, start, end) -> Built:
 
     # The effect: 45 more devices keep asking and are refused, retrying with backoff.
     refused = 0
-    for _ in range(45):
+    for _ in range(refused_devices):
         mac = random_mac(rng)
         at = t + sec(rng.uniform(0, 900))
         wait = 4.0
@@ -407,12 +428,12 @@ def prompt_injection(rng, start, end) -> Built:
     return Built(recs, [incident])
 
 
-def overlap(rng, start, end) -> Built:
+def overlap(rng, start, end, cycles: int = 10, attempts: int = 300) -> Built:
     """10. Two unrelated incidents at the same time: a flapping port and a brute force."""
     t = _moment(rng, start, end)
     port = "GigabitEthernet0/5"
-    recs = _flap(rng, t, "SW2", port, 10, "inc-1")
-    recs += _brute_force(rng, t - sec(120), 8, 300, False, "inc-2")
+    recs = _flap(rng, t, "SW2", port, cycles, "inc-1")
+    recs += _brute_force(rng, t - sec(120), 8, attempts, False, "inc-2")
     incidents = [
         Incident(
             id="inc-1",
@@ -421,7 +442,7 @@ def overlap(rng, start, end) -> Built:
             root_cause={"kind": "link_flap", "device": "SW2", "entity": port},
             devices=["SW2"],
             expected_severity="high",
-            facts={"down_transitions": 10},
+            facts={"down_transitions": cycles},
         ),
         Incident(
             id="inc-2",
@@ -431,7 +452,7 @@ def overlap(rng, start, end) -> Built:
             devices=[topo.SERVER],
             expected_severity="medium",
             notes="No login succeeded. Unrelated to the flapping port; must stay separate.",
-            facts={"failed_logins": 300, "succeeded": False},
+            facts={"failed_logins": attempts, "succeeded": False},
         ),
     ]
     return Built(recs, incidents, reserved_ports=frozenset({("SW2", port)}))
@@ -451,9 +472,12 @@ SCENARIOS: dict[str, tuple[str, Callable[..., Built]]] = {
 }
 
 
-def build(name: str, rng: random.Random, start: datetime, end: datetime, lines: int) -> Built:
-    """Build a scenario's incident records and add background noise around them."""
-    built = SCENARIOS[name][1](rng, start, end)
+def build(
+    name: str, rng: random.Random, start: datetime, end: datetime, lines: int, **settings
+) -> Built:
+    """Build a scenario's incident records and add background noise around them.
+    `settings` are passed to the scenario, for those that take any."""
+    built = SCENARIOS[name][1](rng, start, end, **settings)
     noise = Noise(rng, start, end, built.reserved_ports)
     target = max(lines - len(built.recs), lines // 3)
     built.recs = built.recs + [r for r in noise.generate(target) if built.keep_noise(r)]
