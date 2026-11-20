@@ -35,15 +35,25 @@ function NavItem({ to, label, end }: { to: string | null; label: string; end?: b
   );
 }
 
-/** A mark for the product: three log lines, the middle one flagged. */
+/** The product's mark: the root cause in violet, with the three devices it affected. */
 function Logo() {
+  const tile = "32,8 52.78,20 52.78,44 32,56 11.22,44 11.22,20";
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-6">
-      <rect x="1" y="1" width="22" height="22" rx="5" className="fill-accent" />
-      <rect x="5.5" y="6.5" width="13" height="2" rx="1" className="fill-accent-ink" opacity="0.55" />
-      <rect x="5.5" y="11" width="8" height="2" rx="1" className="fill-accent-ink" />
-      <circle cx="17" cy="12" r="1.6" className="fill-accent-ink" />
-      <rect x="5.5" y="15.5" width="10" height="2" rx="1" className="fill-accent-ink" opacity="0.55" />
+    <svg viewBox="0 0 64 64" aria-hidden="true" className="size-7">
+      <polygon points={tile} fill="none" stroke="#3d4466" strokeWidth="10" strokeLinejoin="round" />
+      <polygon points={tile} fill="#191c2b" stroke="#191c2b" strokeWidth="8" strokeLinejoin="round" />
+      <path
+        d="M32 35V19M32 35L18.1 43M32 35l13.9 8"
+        stroke="#9aa0b8"
+        strokeWidth="3.5"
+        strokeLinecap="round"
+      />
+      <g fill="#eef0f7">
+        <circle cx="32" cy="19" r="4.5" />
+        <circle cx="18.1" cy="43" r="4.5" />
+        <circle cx="45.9" cy="43" r="4.5" />
+      </g>
+      <circle cx="32" cy="35" r="6.5" fill="#785ef0" />
     </svg>
   );
 }
