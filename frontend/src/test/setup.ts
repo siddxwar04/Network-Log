@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, vi } from "vitest";
+import type { TimelineChartProps } from "../components/TimelineChart";
 import type { EventsSeries } from "../lib/eventsChart";
 
 // jsdom cannot lay out or draw a chart. The chart is replaced by a stand-in with one button
@@ -17,6 +18,31 @@ vi.mock("../components/EventsChart", () => ({
       ),
     ),
 }));
+
+// The incident timeline likewise: one button per marker, and one that zooms into the first
+// half of the range as a drag across the chart would. Clustering is tested on its own.
+vi.mock("../components/TimelineChart", () => ({
+  default: ({ lanes, clusters, range, onZoom, onSelect }: TimelineChartProps) =>
+    createElement(
+      "div",
+      { "data-testid": "timeline-chart", "data-lanes": lanes.join(","), "data-markers": clusters.length },
+      createElement(
+        "button",
+        { type: "button", onClick: () => onZoom({ start: range.start, end: range.start + (range.end - range.start) / 2 }) },
+        "Drag to zoom",
+      ),
+      clusters.map((cluster) =>
+        createElement(
+          "button",
+          { key: cluster.key, type: "button", onClick: () => onSelect(cluster.events[0]) },
+          `Marker: ${cluster.kind} on ${lanes[cluster.lane]} x${cluster.events.length}`,
+        ),
+      ),
+    ),
+}));
+
+// Screens load lazily; on a busy machine the first render can take more than a second.
+configure({ asyncUtilTimeout: 4000 });
 
 afterEach(() => {
   cleanup();
