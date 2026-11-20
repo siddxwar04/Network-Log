@@ -25,11 +25,15 @@ from netlog.detection.engine import detect
 from netlog.detection.rules import LEVELS, load_rules
 from netlog.ingestion.ingest import ingest_file
 from netlog.ingestion.reader import BinaryFileError
+from netlog.llm.explanation import MODES
+from netlog.llm.provider import Provider
+from netlog.llm.settings import llm_settings, load_env_file
 from netlog.mining.templates import mine_templates
 from netlog.parsers.syslog import parse_timezone
 from netlog.report.build import Report, build_report, to_json
+from netlog.report.explain import explain_incidents
 from netlog.report.render import render_markdown, render_text
-from netlog.storage.database import Database
+from netlog.storage.database import Database, default_db_path
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_ERROR = 0, 1, 2
 
@@ -83,6 +87,21 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also list the individual findings inside each incident",
     )
+    analyze.add_argument(
+        "--audience",
+        choices=MODES,
+        default="senior",
+        help="who the explanation is written for: junior explains terms and reasoning, "
+        "senior is terse (default: senior)",
+    )
+    analyze.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="never ask an LLM; explain every incident with the built-in templates",
+    )
+    analyze.add_argument(
+        "--usage", action="store_true", help="show how many LLM tokens the report cost"
+    )
     analyze.add_argument("--rules", type=Path, help="a rule file that adds to the built-in rules")
     analyze.add_argument("--config", type=Path, help="a settings file that overrides the defaults")
     analyze.add_argument("--no-color", action="store_true", help="never use color")
@@ -119,7 +138,11 @@ class _Progress:
             sys.stderr.flush()
 
 
-def analyze(args: argparse.Namespace, progress: _Progress) -> Report:
+def analyze(
+    args: argparse.Namespace, progress: _Progress, provider: Provider | None = None
+) -> Report:
+    """Run the whole pipeline on the file. `provider` replaces the configured LLM
+    provider, which is how tests supply a fake."""
     path: Path = args.file
     if not path.exists():
         raise UsageError(f"file not found: {path}")
@@ -136,6 +159,7 @@ def analyze(args: argparse.Namespace, progress: _Progress) -> Report:
         rules = load_rules(args.rules)
         hints = load_topology(args.topology) if args.topology else None
         priors = load_priors()
+        settings = llm_settings(config)
     except ValueError as error:  # includes RuleError, TopologyError and PriorError
         raise UsageError(str(error)) from None
 
@@ -170,6 +194,39 @@ def analyze(args: argparse.Namespace, progress: _Progress) -> Report:
             detect(db, upload_id, rules, config)
             progress.show("Grouping findings into incidents")
             correlate(db, upload_id, config, hints, priors)
+
+            # Everything above is decided. The explanation only puts it into words.
+            floor = LEVELS.index(args.min_severity)
+            listed = [
+                incident.id
+                for incident in db.incidents(upload_id)
+                if LEVELS.index(incident.severity) >= floor
+            ]
+            use_llm = not args.no_llm
+            asks = use_llm and (provider is not None or settings.configured)
+            # Stored answers live in the local database. It is only opened when an LLM
+            # may be asked; otherwise nothing is written outside the temporary folder.
+            cache = Database(default_db_path()) if asks and listed else db
+            try:
+                explanations = explain_incidents(
+                    db,
+                    upload_id,
+                    listed,
+                    cache,
+                    args.audience,
+                    use_llm=use_llm,
+                    provider=provider,
+                    settings=settings,
+                    config=config,
+                    on_progress=lambda n, total: progress.show(
+                        f"Explaining incident {n} of {total}"
+                    ),
+                )
+            except ValueError as error:  # a pack limit set too low to hold an incident
+                raise UsageError(str(error)) from None
+            finally:
+                if cache is not db:
+                    cache.close()
             return build_report(
                 db,
                 upload_id,
@@ -178,6 +235,8 @@ def analyze(args: argparse.Namespace, progress: _Progress) -> Report:
                 assumed_year=assumed_year,
                 timezone=args.timezone,
                 show_findings=args.findings,
+                show_usage=args.usage,
+                explanations=explanations,
             )
 
 
@@ -189,8 +248,9 @@ def _render(report: Report, args: argparse.Namespace) -> str:
     return render_text(report, color=_use_color(args))
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, provider: Provider | None = None) -> int:
     args = _parser().parse_args(argv)
+    load_env_file()  # the LLM provider and its key, if the user has set them up
     # A log line may hold characters the console cannot show. Print a "?" for those
     # instead of failing.
     for stream in (sys.stdout, sys.stderr):
@@ -199,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
 
     progress = _Progress(enabled=not args.quiet and sys.stderr.isatty())
     try:
-        report = analyze(args, progress)
+        report = analyze(args, progress, provider)
         text = _render(report, args)
         progress.clear()
         if args.output:

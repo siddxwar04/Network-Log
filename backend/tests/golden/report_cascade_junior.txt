@@ -1,0 +1,101 @@
+netlog report: 02_cascade.log
+=============================
+
+File
+  Lines      5,000 (100.0% parsed, 100.0% classified)
+  Devices    8: R1, R2, R3, R4, SW1, SW2, dhcp1, srv1
+  Time span  2026-03-03 00:00:18 to 2026-03-03 06:00:00 UTC (5h 59m)
+  Templates  34 (147 lines per template)
+
+Verdict
+  1 incident: 1 critical (12 findings on 4 devices)
+  154 routine findings recorded (config changes, interfaces that went down); 1 attached to incidents
+  as context. Use --min-severity info to list them.
+
+Incidents
+  [CRITICAL] Interface GigabitEthernet0/1 on R1 was down for 8m 36s
+      When          2026-03-03 02:46:11 to 02:46:52 UTC (41s)
+      Devices       R1, R2, R3, R4
+      Findings      12 findings: 6 OSPF adjacency lost, 6 BGP session down
+      Likely cause  Interface GigabitEthernet0/1 on R1 was down for 8m 36s
+      Confidence    High: every finding is accounted for, the timing matches how the protocols
+                    behave, and 4 devices report it.
+      Severity      Critical: the most serious finding is "BGP session from R1 to 10.255.0.2 went
+                    down".
+      What happened
+        Interface GigabitEthernet0/1 on R1 was down for 8m 36s
+          2260  Mar  3 02:46:12 R1 89085: Mar  3 02:46:11.699: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
+          2400  Mar  3 02:54:48 R1 89100: Mar  3 02:54:47.374: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up
+           -> OSPF adjacency lost on R1 (3 findings) (at once)
+              Why: OSPF runs over that interface, so the router dropped its neighbors there the
+                   moment the interface went down.
+                2261  Mar  3 02:46:12 R1 89086: Mar  3 02:46:11.719: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.2 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface ...
+                2262  Mar  3 02:46:12 R1 89087: Mar  3 02:46:11.723: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.3 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Interface ...
+              -> BGP session down on R1 (3 findings) (+20s to +24s) [plausible]
+                 Why: BGP between loopback addresses depends on OSPF for the route to its peer; once
+                      the OSPF adjacency was lost the BGP session timed out.
+                   2271  Mar  3 02:46:33 R1 89090: Mar  3 02:46:31.997: %BGP-5-ADJCHANGE: neighbor 10.255.0.2 Down BGP Notification sent
+                   2273  Mar  3 02:46:34 R1 89092: Mar  3 02:46:33.833: %BGP-5-ADJCHANGE: neighbor 10.255.0.4 Down BGP Notification sent
+           -> BGP session down on R2, R3, R4 (+23s to +27s)
+              Why: BGP keepalives from the device whose interface failed stopped arriving, so its
+                   peers closed their sessions when the hold timer ran out.
+                2275  Mar  3 02:46:35 R4 51513: Mar  3 02:46:34.266: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent
+                2279  Mar  3 02:46:37 R2 22750: Mar  3 02:46:38.988: %BGP-5-ADJCHANGE: neighbor 10.255.0.1 Down BGP Notification sent
+           -> OSPF adjacency lost on R2, R3, R4 (+35s to +41s)
+              Why: The other routers stopped hearing OSPF hellos from the device whose interface
+                   failed, and gave up on it when the 40-second dead timer ran out.
+                2284  Mar  3 02:46:45 R3 64328: Mar  3 02:46:46.555: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer...
+                2288  Mar  3 02:46:52 R4 51515: Mar  3 02:46:51.316: %OSPF-5-ADJCHG: Process 1, Nbr 10.255.0.1 on GigabitEthernet0/1 from FULL to DOWN, Neighbor Down: Dead timer...
+      Not known from these logs
+        - Why the interface went down. The logs show that it did, not whether a cable, an optic or
+          the device at the other end was at fault.
+        - Neighbor addresses not matched to a device in these logs: 10.255.0.2, 10.255.0.3,
+          10.255.0.4. List them in a topology file to say which device each one is.
+      Explanation
+        For a junior reader. Written by an LLM (fake fake), checked against the evidence.
+        The interface GigabitEthernet0/1 on R1 went down at 02:46:11 and stayed down. That interface
+        carried OSPF, the protocol the routers use to learn routes inside the network, so R1 lost
+        its OSPF neighbors at once. BGP, which exchanges routes between routers over long-lived
+        sessions, then timed out on R2, R3 and R4. The likely cause of all of it is that one
+        interface.
+        Timeline
+          - The interface GigabitEthernet0/1 on R1 changed state to down. [lines 2260, 2400]
+          - R1 knew its own interface was down, so it dropped its three OSPF neighbors on it
+            immediately. [lines 2261, 2262, 2263]
+          - R2, R3 and R4 stopped receiving BGP keepalives from R1 and closed their sessions when
+            the hold timer ran out. [lines 2275, 2279, 2281]
+          - The same three routers stopped hearing OSPF hellos and gave up after the 40-second dead
+            timer. [lines 2284, 2287, 2288]
+        Root-cause hypotheses
+          1. The most likely cause is that GigabitEthernet0/1 on R1 failed: a cable, an optic (the
+             plug-in fiber module) or the device at the other end. [lines 2260, 2261, 2262, 2263,
+             2275, 2279, 2281, 2284 and 3 more]
+        Impact
+          - Three routers lost both their OSPF adjacency and their BGP session to R1, so routes
+            through R1 were withdrawn. [lines 2275, 2279, 2281, 2284, 2287, 2288]
+        What to do
+          1. Look at the cable and the optic on GigabitEthernet0/1. A healthy port shows error
+             counters that are not rising.
+          2. [REVIEW BEFORE RUNNING] If it stays down, shut and no shut the port, which restarts it.
+        Commands to confirm (read-only)
+          show interfaces GigabitEthernet0/1
+              Healthy: Both the interface and the line protocol show up, and the input error counter
+              stays still.
+        Also not known
+          - Why the interface went down. The logs show that it did, not what broke.
+
+Most frequent messages
+      761  DHCPACK on <IP> to <MAC> (<HOST>) via <IF>
+      470  DHCPREQUEST for <IP> from <MAC> via <IF>
+      433  pam_unix(sshd:session): session opened for user <USER>(uid=<NUM>) by (uid=<NUM>)
+      411  pam_unix(sshd:session): session closed for user <USER>
+      311  Accepted publickey for <USER> from <IP> port <NUM> ssh2: ED25519 <KEY>
+      291  DHCPDISCOVER from <MAC> via <IF>
+      291  DHCPREQUEST for <IP> (<IP>) from <MAC> via <IF>
+      291  DHCPOFFER on <IP> to <MAC> via <IF>
+      201  pam_unix(cron:session): session opened for user <USER>(uid=<NUM>) by (uid=<NUM>)
+      201  pam_unix(cron:session): session closed for user <USER>
+
+Notes
+  Assumption: The log lines carry no year; 2026 was used, as given.
+  Assumption: The log lines carry no timezone, so UTC was assumed. Use --timezone to set it.

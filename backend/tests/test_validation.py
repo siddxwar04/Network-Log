@@ -4,6 +4,7 @@ import re
 import shutil
 import sqlite3
 from dataclasses import replace
+from itertools import product
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ from netlog.cli import main as cli_main
 from netlog.config import load_config
 from netlog.llm.evidence import EvidencePack, build_pack, outgoing_packs
 from netlog.llm.explain import explain_incident, explain_pack, restore_explanation
-from netlog.llm.explanation import Explanation, parse_explanation
+from netlog.llm.explanation import MODES, Explanation, parse_explanation
 from netlog.llm.fallback import fallback_explanation, load_templates, template_name
 from netlog.llm.prompt import load_prompt
 from netlog.llm.provider import FakeProvider, ServerError
@@ -613,8 +614,8 @@ def test_the_fallback_for_every_sample_incident_passes_the_validator(analyzed, n
     pairs, redactor = outgoing_packs(db, upload)
     assert pairs
     for incident, pack in pairs:
-        for subject in (pack, build_pack(db, upload, incident)):
-            explanation = fallback_explanation(subject)
+        for subject, mode in product((pack, build_pack(db, upload, incident)), MODES):
+            explanation = fallback_explanation(subject, mode)
             assert validate_explanation(explanation, subject) == []
             # Same structure as an LLM's answer, and it cites only ids from the pack.
             assert parse_explanation(explanation.model_dump_json()) == explanation
@@ -629,9 +630,9 @@ def test_the_fallback_for_every_sample_incident_passes_the_validator(analyzed, n
 
 
 def test_the_fallback_says_what_the_tool_decided(cascade):
-    explanation = fallback_explanation(cascade)
+    explanation = fallback_explanation(cascade, "junior")
 
-    assert explanation == fallback_explanation(cascade)  # same pack, same explanation
+    assert explanation == fallback_explanation(cascade, "junior")  # same pack, same explanation
     assert "Severity is critical" in explanation.summary
     assert "The likely root cause: Interface GigabitEthernet0/1 on HOST_1 was down" in (
         explanation.summary
@@ -667,10 +668,13 @@ def test_the_template_of_every_incident_type_passes_the_validator(cascade, brute
         for root in (True, False):
             subject = _as_kind(pack, name, root=root)
             assert template_name(subject) == name
-            explanation = fallback_explanation(subject)
+            senior = fallback_explanation(subject, "senior")
+            assert validate_explanation(senior, subject) == [], (name, root)
+            explanation = fallback_explanation(subject, "junior")
             assert validate_explanation(explanation, subject) == [], (name, root)
             template = load_templates()["templates"][name]
             assert template["meaning"] in explanation.summary
+            assert template["meaning"] not in senior.summary
             assert explanation.unknowns == template["unknowns"]
             assert explanation.fix_steps and explanation.verification_commands
             if not root:
@@ -695,7 +699,7 @@ def test_there_is_a_template_for_every_incident_type_the_rules_can_report(cascad
 def test_the_fallback_stays_within_the_limits_for_a_large_incident(cascade):
     config = load_config()
     config["validation"].update(max_items=5, max_citations=3, max_summary_chars=300)
-    explanation = fallback_explanation(cascade, config)
+    explanation = fallback_explanation(cascade, config=config)
 
     assert validate_explanation(explanation, cascade, config) == []
     assert len(explanation.timeline) == 5
@@ -763,7 +767,7 @@ def test_scenario_9_an_obedient_answer_is_rejected_and_the_fallback_is_used(
     # What the reader gets states the incident, and none of the injected text.
     shown = restore_explanation(result.explanation, redactor)
     text = shown.model_dump_json()
-    assert "Severity is critical" in shown.summary
+    assert "Severity critical" in shown.summary
     assert "400 failed logins from 192.0.2.77" in shown.summary
     assert not [value for value in injected if value in text]
     assert validate_explanation(result.explanation, pack) == []

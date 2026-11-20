@@ -30,6 +30,34 @@ Incidents
       Not known from these logs
         - Why the interface went down. The logs show that it did, not whether a cable, an optic or
           the device at the other end was at fault.
+      Explanation
+        For a senior reader. Written by the built-in templates, not an LLM (no LLM provider is
+        configured).
+        Likely root cause: Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s
+        (confidence medium). Severity high.
+        Timeline
+          - 02:35:21 UTC: Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s. [lines
+            2083, 2091, 2099]
+        Root-cause hypotheses
+          1. Likely root cause: Interface GigabitEthernet0/2 on R1 went down 12 times in 3m 21s.
+             Accounts for 1 of 1 findings; confidence medium. [lines 2083, 2091, 2099]
+        Impact
+          - Whatever is connected through this interface was interrupted every time it went down.
+            [lines 2083, 2091, 2099]
+        What to do
+          1. Look at the error counters of GigabitEthernet0/2 on R1: rising CRC or input errors
+             point at the cable or the optic.
+          2. Check that speed and duplex match at both ends.
+          3. Reseat or replace the cable and the optic, one at a time, and watch whether the
+             flapping stops.
+          4. [REVIEW BEFORE RUNNING] Shut the interface if the flapping is disturbing the rest of
+             the network and the link can be spared.
+        Commands to confirm (read-only)
+          show interfaces GigabitEthernet0/2
+              Healthy: The interface is up, and the CRC, input error and interface reset counters
+              are not rising.
+          show logging | include UPDOWN
+              Healthy: No new up and down messages for this interface.
 
 Most frequent messages
       767  DHCPACK on <IP> to <MAC> (<HOST>) via <IF>

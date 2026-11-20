@@ -82,7 +82,7 @@ def explain_all(
                     result = explain_incident(
                         cache, pack, mode, provider=provider, settings=settings, config=config
                     )
-                    builtin = fallback_explanation(pack, config)
+                    builtin = fallback_explanation(pack, mode, config)
                     rows.append(
                         Row(
                             scenario=log.stem,

@@ -8,13 +8,19 @@
 # problem means, what to check, and how to confirm it.
 #
 #   meaning    one sentence on what this kind of problem is
+#   terms      the technical terms a newcomer needs, each explained in a few words
 #   impact     what is affected while it lasts
-#   checks     what to check or do, in order. `changes = true` marks a step that changes
-#              a device, which the report shows as "review before running"
+#   checks     what to check or do, in order. `why` says what the check tells you or what
+#              a healthy result looks like. `changes = true` marks a step that changes a
+#              device, which the report shows as "review before running"
 #   commands   read-only commands that confirm the diagnosis, each with what a healthy
 #              result looks like
 #   unknowns   what logs cannot tell about this kind of problem, used when the incident
 #              lists none of its own
+#
+# There are two audiences. The senior explanation is terse: it leaves out `meaning`,
+# `terms` and every `why`. The junior explanation includes them. The facts, the steps and
+# the citations are the same in both.
 #
 # A text may use {device} (the device or devices at the root of the incident) and
 # {entity} (the interface, address, user or network at the root). A line whose
@@ -29,11 +35,12 @@ device_restart = "device_reload"
 
 [template.default]
 meaning = "The tool has no specific guidance for this kind of incident, so the checks below are general ones."
+terms = "A finding is one rule noticing one problem; an incident is the findings that belong together."
 impact = "The devices named in the findings were affected for as long as the findings lasted."
 checks = [
-    { text = "Read the cited log lines in the original file, with the lines just before and after them.", changes = false },
-    { text = "Compare the time of the first finding with any maintenance or change made around then.", changes = false },
-    { text = "Look at the current state of {device} to see whether the problem is still present.", changes = false },
+    { text = "Read the cited log lines in the original file, with the lines just before and after them.", why = "The lines around a message often show what led to it.", changes = false },
+    { text = "Compare the time of the first finding with any maintenance or change made around then.", why = "A problem that starts right after a change usually comes from it.", changes = false },
+    { text = "Look at the current state of {device} to see whether the problem is still present.", why = "Logs show the past; the device shows whether it still needs attention.", changes = false },
 ]
 commands = [
     { command = "show logging", purpose = "No new messages of the kinds cited in this incident." },
@@ -42,12 +49,13 @@ unknowns = ["Anything these devices did not log."]
 
 [template.interface_down]
 meaning = "An interface that goes down and stays down is most often a cable, an optic, or the device at the other end being off."
+terms = "An interface is a port on the device; its optic is the plug-in module that turns electrical signals into light for a fiber cable."
 impact = "Everything that used this interface lost its path until the interface came back."
 checks = [
-    { text = "Look at the status and the error counters of {entity} on {device}.", changes = false },
-    { text = "Inspect the cable and the optic at both ends, and confirm that the device at the other end is powered and its port is not shut.", changes = false },
-    { text = "If the port is in the err-disabled state, find out why before bringing it back.", changes = false },
-    { text = "Shut and no shut the interface only after the physical checks, and only if it is still down.", changes = true },
+    { text = "Look at the status and the error counters of {entity} on {device}.", why = "A healthy interface is up with counters that stay still; rising input or CRC errors mean a bad signal is arriving.", changes = false },
+    { text = "Inspect the cable and the optic at both ends, and confirm that the device at the other end is powered and its port is not shut.", why = "A link needs both ends and the cable between them, and the logs come from one end only.", changes = false },
+    { text = "If the port is in the err-disabled state, find out why before bringing it back.", why = "Err-disabled means the switch turned the port off to protect itself, and it will do so again until the reason is removed.", changes = false },
+    { text = "Shut and no shut the interface only after the physical checks, and only if it is still down.", why = "This restarts the port, which interrupts anything still using it.", changes = true },
 ]
 commands = [
     { command = "show interfaces {entity}", purpose = "The interface and the line protocol are both up, and the input error and CRC counters are not rising." },
@@ -57,11 +65,12 @@ unknowns = ["Why the interface went down. Logs show that it did, not whether a c
 
 [template.link_failure]
 meaning = "Both ends of one link reported it down, which points at the link itself: a port, an optic or the cable between them."
+terms = "A link is the connection between two ports; its optics are the plug-in modules that turn electrical signals into light for a fiber cable."
 impact = "Everything that crossed this link lost its path until the link came back."
 checks = [
-    { text = "Inspect the cable and the optics of the link at both ends.", changes = false },
-    { text = "Compare the error counters of the two ports; the end with rising input errors is receiving a bad signal.", changes = false },
-    { text = "Replace the cable or the optic with a known good one if the counters point at it.", changes = false },
+    { text = "Inspect the cable and the optics of the link at both ends.", why = "When both ends see the link go down, the fault is usually between them.", changes = false },
+    { text = "Compare the error counters of the two ports; the end with rising input errors is receiving a bad signal.", why = "A healthy port shows counters that stay still.", changes = false },
+    { text = "Replace the cable or the optic with a known good one if the counters point at it.", why = "Swapping one part at a time shows which part was faulty.", changes = false },
 ]
 commands = [
     { command = "show interfaces status", purpose = "Both ports of the link show connected." },
@@ -71,12 +80,13 @@ unknowns = ["Which end failed. Both ends reported the link down, so the fault co
 
 [template.link_flap]
 meaning = "An interface that keeps going down and coming back usually has a marginal cable, a failing optic or a speed and duplex mismatch."
+terms = "Flapping means going down and up repeatedly; duplex is whether both ends may send at once, and the two ends must agree on it."
 impact = "Whatever is connected through this interface was interrupted every time it went down."
 checks = [
-    { text = "Look at the error counters of {entity} on {device}: rising CRC or input errors point at the cable or the optic.", changes = false },
-    { text = "Check that speed and duplex match at both ends.", changes = false },
-    { text = "Reseat or replace the cable and the optic, one at a time, and watch whether the flapping stops.", changes = false },
-    { text = "Shut the interface if the flapping is disturbing the rest of the network and the link can be spared.", changes = true },
+    { text = "Look at the error counters of {entity} on {device}: rising CRC or input errors point at the cable or the optic.", why = "A healthy interface shows counters that stay still between two looks.", changes = false },
+    { text = "Check that speed and duplex match at both ends.", why = "A mismatch lets the link come up and then fail under traffic.", changes = false },
+    { text = "Reseat or replace the cable and the optic, one at a time, and watch whether the flapping stops.", why = "Changing one part at a time shows which part was faulty.", changes = false },
+    { text = "Shut the interface if the flapping is disturbing the rest of the network and the link can be spared.", why = "A port that is off is steadier for the network than one that keeps changing, but whatever it connects stays cut off.", changes = true },
 ]
 commands = [
     { command = "show interfaces {entity}", purpose = "The interface is up, and the CRC, input error and interface reset counters are not rising." },
@@ -86,11 +96,12 @@ unknowns = ["Why the interface is flapping. Logs show each change of state, not 
 
 [template.neighbor_unreachable]
 meaning = "Several devices lost the same neighbor at about the same time and none of them logged a reason, so the neighbor itself, or the path to it, is the likely fault."
+terms = "A neighbor is another router that this one exchanges routing information with."
 impact = "Routes and sessions through that neighbor were lost on every device that reported it."
 checks = [
-    { text = "Find out whether the device at {entity} is powered and reachable.", changes = false },
-    { text = "Check its links toward the devices that reported losing it.", changes = false },
-    { text = "Look at its own logs for a reload, a crash or an interface going down at that time.", changes = false },
+    { text = "Find out whether the device at {entity} is powered and reachable.", why = "A device that is off or cut off logs nothing, which is why the others are the only witnesses.", changes = false },
+    { text = "Check its links toward the devices that reported losing it.", why = "A failed link on its side looks the same from the outside as a failed device.", changes = false },
+    { text = "Look at its own logs for a reload, a crash or an interface going down at that time.", why = "Its own account says what the others could only see the effect of.", changes = false },
 ]
 commands = [
     { command = "ping {entity}", purpose = "The neighbor answers." },
@@ -101,11 +112,12 @@ unknowns = ["What happened to the neighbor. Its own logs are not in this file, o
 
 [template.bgp_session_down]
 meaning = "When a BGP session drops, every route learned from that neighbor is withdrawn."
+terms = "BGP is the protocol routers use to exchange routes with other networks, over a long-lived session with each neighbor; the hold timer is how long a router waits without hearing from a neighbor before it closes the session."
 impact = "Traffic to the networks learned from that neighbor had to take another path, or had none."
 checks = [
-    { text = "Read the reason logged with the drop: a hold timer that expired means keepalives stopped arriving, a notification received means the neighbor closed the session.", changes = false },
-    { text = "Check that the neighbor's address is reachable and that the interface toward it is up.", changes = false },
-    { text = "Look for a recent change that could block TCP port 179 or alter the neighbor's settings, such as an access list or a password.", changes = false },
+    { text = "Read the reason logged with the drop: a hold timer that expired means keepalives stopped arriving, a notification received means the neighbor closed the session.", why = "The reason says which side gave up, and so where to look next.", changes = false },
+    { text = "Check that the neighbor's address is reachable and that the interface toward it is up.", why = "BGP runs over TCP, so it needs a working path to the neighbor before anything else.", changes = false },
+    { text = "Look for a recent change that could block TCP port 179 or alter the neighbor's settings, such as an access list or a password.", why = "BGP uses TCP port 179, and both ends must agree on the session's settings.", changes = false },
 ]
 commands = [
     { command = "show ip bgp summary", purpose = "The neighbor shows a prefix count, not Idle or Active." },
@@ -115,11 +127,12 @@ unknowns = ["Why the session dropped, beyond the reason the device logged."]
 
 [template.ospf_adjacency_loss]
 meaning = "When an OSPF adjacency is lost, routes through that neighbor are recalculated."
+terms = "OSPF is the protocol routers use to learn routes inside one network; an adjacency is the working relationship between two OSPF neighbors, kept alive by hello messages, and the dead timer is how long a router waits without a hello before giving up."
 impact = "Routing inside the network changed, and traffic through that neighbor moved to another path or was dropped."
 checks = [
-    { text = "Read the reason logged with the loss: an interface that went down is local, a dead timer that expired means hellos from the neighbor stopped arriving.", changes = false },
-    { text = "Check that the interface toward the neighbor is up at both ends.", changes = false },
-    { text = "Compare the hello and dead timers, the area, the MTU and the authentication at both ends.", changes = false },
+    { text = "Read the reason logged with the loss: an interface that went down is local, a dead timer that expired means hellos from the neighbor stopped arriving.", why = "The reason says whether to look at this router or at the neighbor.", changes = false },
+    { text = "Check that the interface toward the neighbor is up at both ends.", why = "Hellos travel over that interface, so OSPF cannot work without it.", changes = false },
+    { text = "Compare the hello and dead timers, the area, the MTU and the authentication at both ends.", why = "Two routers become neighbors only when all of these match.", changes = false },
 ]
 commands = [
     { command = "show ip ospf neighbor", purpose = "The neighbor is listed in the FULL state." },
@@ -129,12 +142,13 @@ unknowns = ["Why hellos stopped, when the dead timer expired. That needs the nei
 
 [template.dhcp_exhaustion]
 meaning = "The DHCP pool has no free addresses left, so devices asking for a new address are refused while existing leases keep working."
+terms = "DHCP hands each device an IP address when it joins the network; the pool is the range of addresses it may hand out, and a lease is one address lent to one device for a set time."
 impact = "New devices on that network could not get an address and so could not connect."
 checks = [
-    { text = "Compare the number of active leases with the size of the pool.", changes = false },
-    { text = "Look through the leases for many unknown devices arriving together, which can be a guest rush or an attack that uses up the pool.", changes = false },
-    { text = "Check whether the lease time is longer than devices normally stay on this network.", changes = false },
-    { text = "Shorten the lease time or enlarge the pool if the network has simply outgrown it.", changes = true },
+    { text = "Compare the number of active leases with the size of the pool.", why = "A healthy pool has addresses to spare at its busiest time.", changes = false },
+    { text = "Look through the leases for many unknown devices arriving together, which can be a guest rush or an attack that uses up the pool.", why = "Who holds the addresses decides whether this is growth or abuse.", changes = false },
+    { text = "Check whether the lease time is longer than devices normally stay on this network.", why = "An address stays taken until its lease runs out, even after the device has left.", changes = false },
+    { text = "Shorten the lease time or enlarge the pool if the network has simply outgrown it.", why = "Either one frees addresses, but both change how the server behaves for every device.", changes = true },
 ]
 commands = [
     { command = "show ip dhcp pool", purpose = "On a Cisco DHCP server: the pool still has free addresses." },
@@ -144,11 +158,12 @@ unknowns = ["Whether the devices holding the leases are legitimate. Logs give th
 
 [template.config_change]
 meaning = "A configuration change made shortly before a failure on the same device is the first thing to check, though it is only a suspect: the logs do not show what was changed."
+terms = "The running configuration is the set of settings a device is using right now; the startup configuration is the saved copy it loads when it boots."
 impact = "Whatever failed right after the change stayed down until the configuration was corrected."
 checks = [
-    { text = "Ask {entity} what was changed on {device}, and why.", changes = false },
-    { text = "Compare the running configuration with the last known good one.", changes = false },
-    { text = "Revert the change if the comparison shows that it caused the failure.", changes = true },
+    { text = "Ask {entity} what was changed on {device}, and why.", why = "The person who made the change knows what the logs do not record.", changes = false },
+    { text = "Compare the running configuration with the last known good one.", why = "The difference between the two is the change itself.", changes = false },
+    { text = "Revert the change if the comparison shows that it caused the failure.", why = "Putting the old settings back is the quickest fix, but it is itself a change to a live device.", changes = true },
 ]
 commands = [
     { command = "show archive config differences nvram:startup-config system:running-config", purpose = "No unexpected differences between the saved and the running configuration." },
@@ -158,12 +173,13 @@ unknowns = ["What was changed. Logs record that a change was made and by whom, n
 
 [template.brute_force]
 meaning = "Many failed logins from one address is someone guessing passwords; it becomes serious when one of the guesses succeeds."
+terms = "A brute-force attack tries many passwords until one works; password spraying tries a few common passwords against many usernames."
 impact = "The accounts on the devices that were tried are at risk, and any account that logged in from that address afterwards must be treated as compromised."
 checks = [
-    { text = "Confirm whether any login from the address {entity} succeeded, and for which account.", changes = false },
-    { text = "Review what that account did afterwards: commands run, files read, keys or users added.", changes = false },
-    { text = "Disable the account or reset its password, and end its open sessions, if a login succeeded.", changes = true },
-    { text = "Block the source address at the firewall, and consider key-only logins or a limit on login attempts.", changes = true },
+    { text = "Confirm whether any login from the address {entity} succeeded, and for which account.", why = "A failed guess costs nothing; a successful one means someone else holds that password.", changes = false },
+    { text = "Review what that account did afterwards: commands run, files read, keys or users added.", why = "This shows how far the intruder got and what has to be cleaned up.", changes = false },
+    { text = "Disable the account or reset its password, and end its open sessions, if a login succeeded.", why = "This locks the intruder out, and the account's real owner with them until a new password is set.", changes = true },
+    { text = "Block the source address at the firewall, and consider key-only logins or a limit on login attempts.", why = "This stops the guessing, though an attacker can come back from another address.", changes = true },
 ]
 commands = [
     { command = "last -i", purpose = "No session from the attacking address." },
@@ -174,12 +190,13 @@ unknowns = ["What was done with any account after a successful login. That needs
 
 [template.resource_exhaustion]
 meaning = "A device short of CPU or memory misses protocol timers and can stop forwarding or reload without warning."
+terms = "A CPU hog is one process holding the processor so long that others cannot run; a memory allocation failure is the device finding no free memory when a process asks for some."
 impact = "Routing neighbors and management sessions on the device were at risk for as long as the shortage lasted."
 checks = [
-    { text = "Find the process named in the cited log lines and see whether it is still using the CPU or the memory.", changes = false },
-    { text = "Look for what loaded the device at that time: a traffic spike, routing changes or a scan.", changes = false },
-    { text = "Compare the software version with the vendor's known bugs for that process.", changes = false },
-    { text = "Reload the device in a maintenance window if its memory does not recover.", changes = true },
+    { text = "Find the process named in the cited log lines and see whether it is still using the CPU or the memory.", why = "A healthy device shows no single process holding most of either.", changes = false },
+    { text = "Look for what loaded the device at that time: a traffic spike, routing changes or a scan.", why = "A process is usually busy because something outside is keeping it busy.", changes = false },
+    { text = "Compare the software version with the vendor's known bugs for that process.", why = "A memory leak is a software fault that only an upgrade removes.", changes = false },
+    { text = "Reload the device in a maintenance window if its memory does not recover.", why = "A reload frees the memory, and cuts off everything behind the device while it boots.", changes = true },
 ]
 commands = [
     { command = "show processes cpu sorted", purpose = "No process holds the CPU, and the five-minute average is low." },
@@ -190,12 +207,13 @@ unknowns = ["What made the process use so much. Logs name the process, not what 
 
 [template.device_reload]
 meaning = "A device that restarts is out of service for minutes, and so is everything connected through it."
+terms = "A reload is a restart of the whole device; while it boots it forwards nothing and logs nothing."
 impact = "Everything connected through the device was cut off from the moment it went down until it finished booting."
 checks = [
-    { text = "Confirm whether the reload was requested and planned; the logs name who asked for it when it was.", changes = false },
-    { text = "Read the reload reason the device recorded; with no request before it, a restart means a crash or a loss of power.", changes = false },
-    { text = "Look for crash files and check the power supply and its source if nobody asked for the reload.", changes = false },
-    { text = "Check that every port and neighbor that was up before the restart is up again.", changes = false },
+    { text = "Confirm whether the reload was requested and planned; the logs name who asked for it when it was.", why = "A planned reload is maintenance; an unplanned one is a fault to find.", changes = false },
+    { text = "Read the reload reason the device recorded; with no request before it, a restart means a crash or a loss of power.", why = "The device keeps the reason for its last restart, and shows it with its version.", changes = false },
+    { text = "Look for crash files and check the power supply and its source if nobody asked for the reload.", why = "A crash leaves a file behind; a power cut leaves nothing.", changes = false },
+    { text = "Check that every port and neighbor that was up before the restart is up again.", why = "A device can come back with a port or a neighbor missing.", changes = false },
 ]
 commands = [
     { command = "show version", purpose = "The uptime and the recorded reload reason match a requested reload." },
@@ -205,12 +223,13 @@ unknowns = ["Whether the reload was planned. Logs show who asked for it, not why
 
 [template.mac_flapping]
 meaning = "A MAC address that keeps moving between two ports usually means a switching loop, which can flood a whole VLAN within seconds."
+terms = "A MAC address is the hardware address of a network card, and a switch remembers which port each one is on; a loop is two paths between the same switches with nothing blocking one of them, and spanning tree is the protocol that blocks it."
 impact = "Devices in that VLAN saw lost or duplicated frames, and a loop can take the whole VLAN down."
 checks = [
-    { text = "Find the two ports the address moves between; they are named in the cited log lines.", changes = false },
-    { text = "Check spanning tree on both ports, and look for a cable or an unmanaged switch that joins them.", changes = false },
-    { text = "Rule out a legitimate cause: a server with two network cards, or a virtual machine that was moved.", changes = false },
-    { text = "Shut one of the two ports to break the loop if a broadcast storm is in progress.", changes = true },
+    { text = "Find the two ports the address moves between; they are named in the cited log lines.", why = "The loop, or the device with two connections, is behind those two ports.", changes = false },
+    { text = "Check spanning tree on both ports, and look for a cable or an unmanaged switch that joins them.", why = "In a healthy network spanning tree blocks one of any two paths.", changes = false },
+    { text = "Rule out a legitimate cause: a server with two network cards, or a virtual machine that was moved.", why = "These move an address between ports without any loop.", changes = false },
+    { text = "Shut one of the two ports to break the loop if a broadcast storm is in progress.", why = "This stops the storm at once, and cuts off whatever is behind that port.", changes = true },
 ]
 commands = [
     { command = "show spanning-tree summary", purpose = "No ports are in an inconsistent state, and the protections expected on access ports are enabled." },

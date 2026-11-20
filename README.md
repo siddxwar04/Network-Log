@@ -2,7 +2,7 @@
 
 Reads network logs, finds the incidents in them, and explains what happened in plain English, with every statement linked to the log lines that prove it.
 
-> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents and names a likely root cause for each. Plain-English explanations and the web interface are still to come. See [Progress](#progress) for exactly what works today.
+> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface is still to come. See [Progress](#progress) for exactly what works today.
 
 ## The problem
 
@@ -24,8 +24,8 @@ Each part of that answer links to the log lines behind it.
 | Detect problems with rules, not guesswork | Link flaps, routing drops, brute-force logins, DHCP exhaustion and more | Works |
 | Say how serious each one is, and why | A fixed, testable severity with a one-line reason | Works |
 | Group related alerts | One failed link that takes down OSPF and BGP on three routers becomes one incident with one root cause | Works |
-| Explain in plain English | An AI model writes the explanation, but only from evidence the rules already found | Planned |
-| Work without the AI | Detection, grouping and reports run fully offline | Works for everything built so far |
+| Explain in plain English | An AI model writes the explanation, but only from evidence the rules already found, and its answer is checked before it is shown | Works; not yet tried against a real model |
+| Work without the AI | Detection, grouping and reports run fully offline, with a built-in explanation in place of the AI's | Works |
 
 ## How it works
 
@@ -54,7 +54,7 @@ Each part of that answer links to the log lines behind it.
     |
     v
  +---------------------+
- | Explain             |   plain-English summary, checked against the evidence   planned
+ | Explain             |   plain-English summary, checked against the evidence   built
  +---------------------+
     |
     v
@@ -78,8 +78,8 @@ Two design rules shape the project:
 | Detection rules and severity | 12 rules, each finding with a severity and a reason | Done |
 | Command-line tool | One command, a report in text, Markdown or JSON | Done |
 | Correlation | Grouping, causal chain, root cause, confidence | Done |
-| AI explanation | Cited explanations with a validator | Next |
-| Web interface | Dashboard, incident page, timeline | Planned |
+| AI explanation | Cited explanations with a validator, a built-in fallback, junior and senior wording | Done |
+| Web interface | Dashboard, incident page, timeline | Next |
 | Live syslog and alerts | Real-time intake, chat notifications | Planned |
 | Evaluation | Measured accuracy on labelled logs | Planned |
 
@@ -92,13 +92,15 @@ Two design rules shape the project:
 - **Groups findings into incidents.** Twelve alerts from four routers become one incident. Findings are joined only when they are close in time and connected; an attack and a link fault in the same minute stay separate.
 - **Names a likely root cause, with a confidence level.** It orders each incident into cause and effect using what is known about how protocols fail, and it lists what the logs cannot tell. A configuration change shortly before a failure is shown as a suspect, never as proven.
 - **Works out who is who from the logs.** Logs never say which address belongs to which router. The tool infers it from adjacency messages, and leaves unknown what it cannot establish.
+- **Explains each incident.** Under every incident the report gives a summary, a timeline, the likely cause, what to check and the read-only commands that confirm it, for a junior or a senior reader (`--audience`). Each statement names the lines of the log file it rests on. Steps that would change a device are marked `REVIEW BEFORE RUNNING`.
+- **Uses an AI model only if you set one up, and checks what it writes.** The model sees a short evidence pack with addresses and names replaced by stand-ins, never the log file. Its answer is rejected if it cites a line that does not exist, mentions an interface or address that is not in the evidence, or contradicts the severity or root cause the rules decided. A rejected answer is asked for once more, then replaced by the built-in explanation. The report says which of the two wrote each explanation.
 - **Collapses noise.** A 50,000-line file reduces to 28 message patterns.
 - **Never drops a line.** A line no parser understands is kept and counted, and the tool reports what share of the file it understood.
 - **Treats log content as untrusted.** A username such as `admin from 10.0.0.1 port 22` does not fool the parsers, and a log line cannot inject formatting into a report.
 
-On the sample logs, all nine files give the expected incidents with the right root cause, severity and devices when the tool is given the network's topology. From the logs alone, eight of nine match: in the ninth the root cause is right, but a neighboring router is not connected to the incident, because nothing in the logs says the two devices are cabled together and the tool does not guess. These are generated logs; see [Limitations](#limitations).
+On the sample logs, all ten files give the expected incidents with the right root cause, severity and devices when the tool is given the network's topology. From the logs alone, nine of ten match: in the tenth the root cause is right, but a neighboring router is not connected to the incident, because nothing in the logs says the two devices are cabled together and the tool does not guess. These are generated logs; see [Limitations](#limitations).
 
-Here is the report for a log where one failed interface, hidden in 5,000 lines, took down routing on four routers (most evidence lines left out, the rest shortened):
+Here is the report for a log where one failed interface, hidden in 5,000 lines, took down routing on four routers (most evidence lines and the explanation left out, the rest shortened):
 
 ```
 Verdict
@@ -176,6 +178,8 @@ Then try your own file, or other options:
 .venv\Scripts\netlog analyze router.log --min-severity high
 .venv\Scripts\netlog analyze router.log --format markdown -o report.md
 .venv\Scripts\netlog analyze router.log --findings
+.venv\Scripts\netlog analyze router.log --audience junior
+.venv\Scripts\netlog analyze router.log --no-llm
 .venv\Scripts\netlog analyze data\scenarios\07_device_reload.log --year 2026 --topology data\scenarios\topology.toml
 ```
 
@@ -192,7 +196,7 @@ See the evidence pack of an incident: the short, numbered case file that is the 
 .venv\Scripts\python -m eval.packs
 ```
 
-Ask an LLM to explain an incident from its evidence pack. This is optional and makes a paid request: copy `.env.example` to `.env`, set `NETLOG_LLM_PROVIDER=openai` and your key in `NETLOG_LLM_API_KEY`, then run the command below. Every answer is checked against the evidence pack before it is shown: its citations must exist, it may not mention anything that is not in the pack, and it may not contradict what the tool decided. An answer that fails is asked for once more; if that fails too, a built-in explanation written from fixed templates is used instead. Answers that pass are cached, so the same incident is only paid for once. Without a key the command prints the built-in explanation and says so. The explanation is not part of the `netlog analyze` report yet.
+Every report explains its incidents with built-in templates. To have an LLM write the explanations instead, copy `.env.example` to `.env` and set `NETLOG_LLM_PROVIDER=openai` and your key in `NETLOG_LLM_API_KEY`; `netlog analyze` then makes a paid request for each incident it lists, and `--no-llm` switches that off for one run. The command below shows one scenario's explanations on their own. Every answer is checked against the evidence pack before it is shown: its citations must exist, it may not mention anything that is not in the pack, and it may not contradict what the tool decided. An answer that fails is asked for once more; if that fails too, a built-in explanation written from fixed templates is used instead. Answers that pass are cached, so the same incident is only paid for once. Without a key the command prints the built-in explanation and says so.
 
 ```powershell
 .venv\Scripts\python -m eval.explain 02_cascade

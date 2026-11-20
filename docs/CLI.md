@@ -1,6 +1,6 @@
 # Command Line
 
-One command analyzes a log file and prints a report. It runs fully offline.
+One command analyzes a log file and prints a report. It runs fully offline unless you set up an LLM provider, which is optional and only ever writes the explanations.
 
 ```powershell
 netlog analyze <file>
@@ -19,6 +19,9 @@ After installing the project (`pip install -e .`), the command is `netlog` insid
 | `--timezone ZONE` | `UTC` | Timezone of the devices' clocks: `UTC` or an offset such as `+05:30` |
 | `--topology FILE` | none | A file saying which address is which device and which interfaces are connected |
 | `--findings` | off | Also list the individual findings inside each incident |
+| `--audience junior` / `senior` | `senior` | Who the explanation is written for. Junior explains terms and reasoning; senior is terse |
+| `--no-llm` | off | Never ask an LLM, even when one is configured; use the built-in explanations |
+| `--usage` | off | Show how many LLM requests and tokens the report cost |
 | `--rules FILE` | none | A rule file whose rules replace or add to the built-in ones |
 | `--config FILE` | none | A settings file that overrides the defaults |
 | `--no-color` | | Never use color |
@@ -38,6 +41,9 @@ netlog analyze router.log --min-severity info
 
 # Tell it about your network, so it can connect what the logs alone cannot
 netlog analyze router.log --topology my-network.toml
+
+# For someone new to networking: terms explained, every check with its reason
+netlog analyze router.log --audience junior
 
 # A report to attach to a ticket
 netlog analyze router.log --format markdown -o report.md
@@ -69,6 +75,7 @@ Related findings are grouped into one incident. A failed link that takes down ro
 | Severity | Why it has that level |
 | What happened | The story: the cause first, then each group of effects indented under what caused it |
 | Not known from these logs | What the logs cannot tell, such as why an interface went down |
+| Explanation | The incident in plain English, with what to do about it; see below |
 
 Here is the story of a failed link, shortened:
 
@@ -89,6 +96,38 @@ What happened
 - The time in brackets is how long after the cause each effect began.
 - `[plausible]` marks a step that is usual but depends on how the network is built. `[suspect]` marks a configuration change. A step with no mark is certain when it applies.
 - Under each step are the log lines that prove it, with their line numbers in the original file.
+
+### The explanation
+
+Everything above the explanation is decided by rules. The explanation puts it into words and adds what to do. It never changes the severity, the root cause or the confidence.
+
+```
+Explanation
+  For a senior reader. Written by the built-in templates, not an LLM (no LLM provider is
+  configured).
+  Likely root cause: Interface GigabitEthernet0/1 on R1 was down for 8m 36s (confidence high).
+  Severity critical. BGP session from R1 to 10.255.0.2 went down, with 11 related findings ...
+  Timeline
+    - 02:46:11 UTC: Interface GigabitEthernet0/1 on R1 was down for 8m 36s. [lines 2260, 2400]
+  Root-cause hypotheses
+    1. Likely root cause: Interface GigabitEthernet0/1 on R1 was down for 8m 36s. ... [lines ...]
+  Impact
+    - Direct effect: 3 findings, at once. [lines 2261, 2262, 2263]
+  What to do
+    1. Look at the status and the error counters of GigabitEthernet0/1 on R1.
+    4. [REVIEW BEFORE RUNNING] Shut and no shut the interface only after the physical checks ...
+  Commands to confirm (read-only)
+    show interfaces GigabitEthernet0/1
+        Healthy: The interface and the line protocol are both up ...
+```
+
+- **Who wrote it** is stated on the first line: an LLM, or the built-in templates with the reason (none configured, switched off, the provider failed, or its answers were rejected).
+- **`[lines 2260, 2400]`** are line numbers in the file you analyzed. Open the file at those lines to check the statement. Long lists are cut after eight numbers.
+- **`[REVIEW BEFORE RUNNING]`** marks a step that would change a device. Read it and decide; the tool never runs anything.
+- **Also not known** appears when the explanation names something unknown that the incident does not already list.
+- `--audience junior` gives the same facts, steps and citations in more words: terms are explained, the mechanism behind each effect is spelled out, and every check comes with its reason.
+
+To have an LLM write the explanations, put `NETLOG_LLM_PROVIDER=openai` and `NETLOG_LLM_API_KEY=...` in a file named `.env` in the folder you run the command from (or name another file with the `NETLOG_ENV_FILE` environment variable). Each listed incident then costs one request, two if the first answer is rejected. Answers are kept in `data/netlog.db`, so the same incident is not paid for twice. The LLM is sent a short evidence pack in which addresses, device names and usernames are replaced by stand-ins; the real values are put back on your machine.
 
 ### Routine findings
 
@@ -194,6 +233,24 @@ The field names below are stable: new fields may be added, existing ones are not
 | `chain` | Each step of cause and effect: `{ "cause", "effect", "prior", "certainty", "explanation", "delay_seconds" }`, where `cause` and `effect` are finding ids |
 | `story` | The chain as the report shows it: rows of `{ "depth", "label", "when", "certainty", "explanation", "explained", "findings", "evidence" }` |
 | `title` | A longer description naming the most serious finding |
+| `explanation` | The plain-English explanation; see below |
+
+### `incidents[].explanation`
+
+| Field | Meaning |
+|---|---|
+| `source` | `llm`, `cache` (an LLM's answer read from the local cache) or `fallback` (the built-in templates) |
+| `written_by` | The same as a phrase |
+| `audience` | `junior` or `senior` |
+| `provider`, `model` | The LLM asked, if any |
+| `fallback_reason` | Why the built-in explanation was used; `null` otherwise |
+| `summary` | Two to four sentences |
+| `timeline`, `impact` | Lists of `{ "text", "lines", "evidence" }`: `lines` are line numbers in the file, `evidence` the ids as they were cited |
+| `hypotheses` | The same, plus `against_lines` and `against` for evidence that speaks against the hypothesis |
+| `fix_steps` | `{ "text", "review_before_running" }`, in order |
+| `verification_commands` | `{ "command", "purpose" }`; read-only |
+| `unknowns` | What the logs cannot tell |
+| `usage` | `{ "requests", "input_tokens", "output_tokens", "latency_ms" }` for this explanation |
 
 ### `findings[]`
 
@@ -228,6 +285,6 @@ Every finding at or above the minimum severity, plus any that belong to a listed
 
 ## What it cannot do yet
 
-- Write a free-form explanation or suggest fixes. The report states what the rules established; the plain-English explanation is a later stage.
+- Run anything. Fix steps and commands are suggestions for a person to read.
 - Know your network without being told. Without a topology file it connects only what the logs themselves reveal.
 - Read anything other than a file: no live syslog.

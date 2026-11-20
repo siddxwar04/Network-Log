@@ -17,10 +17,13 @@ from netlog.config import load_config
 ENV_PROVIDER = "NETLOG_LLM_PROVIDER"
 ENV_MODEL = "NETLOG_LLM_MODEL"
 ENV_KEY = "NETLOG_LLM_API_KEY"
+# The file the provider and the key are read from, when it is not `.env` in the current
+# folder. The tests point this at nothing, so a developer's own key is never used by them.
+ENV_FILE = "NETLOG_ENV_FILE"
 
 
 def load_env_file(
-    path: str | Path = ".env", environ: MutableMapping[str, str] | None = None
+    path: str | Path | None = None, environ: MutableMapping[str, str] | None = None
 ) -> list[str]:
     """Read `NAME=value` lines from a .env file into the environment.
 
@@ -28,6 +31,7 @@ def load_env_file(
     Returns the names that were set. A missing file is not an error.
     """
     environ = os.environ if environ is None else environ
+    path = path or environ.get(ENV_FILE) or ".env"
     try:
         text = Path(path).read_text(encoding="utf-8-sig")
     except (FileNotFoundError, IsADirectoryError, PermissionError):

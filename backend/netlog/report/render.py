@@ -6,6 +6,8 @@ its default console encoding as well as in any other terminal.
 Everything that comes from a log line (titles containing usernames, the evidence lines
 themselves) is treated as untrusted text: control characters are removed for the
 terminal, and Markdown characters are escaped, so a log line cannot inject formatting.
+The explanation is treated the same way, whoever wrote it: an LLM's text is not trusted
+either, and the real names put back into it come from log lines.
 """
 
 from __future__ import annotations
@@ -15,10 +17,13 @@ import textwrap
 from datetime import datetime
 
 from netlog.detection.finding import Finding, format_duration
-from netlog.report.build import Report, ReportIncident, StoryRow
+from netlog.report.build import Cited, Report, ReportExplanation, ReportIncident, StoryRow
 
 _WIDTH = 100
 _MAX_LINE = 180
+# How many cited line numbers are listed after one statement before "and N more".
+_MAX_CITED = 8
+REVIEW = "REVIEW BEFORE RUNNING"
 
 _COLORS = {
     "critical": "\x1b[1;91m",  # bright red, bold
@@ -139,6 +144,59 @@ def _row_text(row: StoryRow) -> str:
     return text
 
 
+def _cited(lines: list[int]) -> str:
+    """`lines 2260, 2265 and 3 more`: where in the original file to look."""
+    if not lines:
+        return ""
+    shown = ", ".join(str(line) for line in lines[:_MAX_CITED])
+    more = f" and {len(lines) - _MAX_CITED} more" if len(lines) > _MAX_CITED else ""
+    return f"{'line' if len(lines) == 1 else 'lines'} {shown}{more}"
+
+
+def _with_lines(item: Cited) -> str:
+    where = _cited(item.lines)
+    return f"{item.text} [{where}]" if where else item.text
+
+
+def _audience(explanation: ReportExplanation) -> str:
+    return f"For a {explanation.mode} reader. Written by {explanation.written_by}."
+
+
+def _usage(explanation: ReportExplanation) -> str:
+    if not explanation.requests:
+        if explanation.source == "cache":
+            return (
+                "no request made; the cached answer cost "
+                f"{explanation.input_tokens:,} tokens in, {explanation.output_tokens:,} out"
+            )
+        return "no request made"
+    requests = _plural(explanation.requests, "request")
+    return (
+        f"{explanation.input_tokens:,} tokens in, {explanation.output_tokens:,} out, "
+        f"{requests}, {explanation.latency_ms / 1000:.1f} s"
+    )
+
+
+def _extra_unknowns(item: ReportIncident) -> list[str]:
+    """What the explanation says is not known, beyond what the incident already lists."""
+    listed = set(item.incident.unknowns)
+    return [text for text in item.explanation.unknowns if text not in listed]
+
+
+def _total_usage(report: Report) -> str | None:
+    explained = [item.explanation for item in report.incidents if item.explanation]
+    if not report.show_usage or not explained:
+        return None
+    requests = sum(e.requests for e in explained)
+    if not requests:
+        return "LLM usage: no request was made for this report."
+    return (
+        f"LLM usage: {_plural(requests, 'request')}, "
+        f"{sum(e.input_tokens for e in explained if e.requests):,} tokens in, "
+        f"{sum(e.output_tokens for e in explained if e.requests):,} tokens out."
+    )
+
+
 # --- Terminal text -----------------------------------------------------------------------
 
 
@@ -175,7 +233,7 @@ def render_text(report: Report, color: bool = False) -> str:
     if report.incidents:
         out.append(paint("Incidents", _BOLD))
         for item in report.incidents:
-            out += _incident_text(item, report.show_findings, paint)
+            out += _incident_text(item, report.show_findings, paint, report.show_usage)
 
     if report.lists_routine and report.routine_count:
         out.append(paint("Routine findings", _BOLD))
@@ -201,6 +259,8 @@ def render_text(report: Report, color: bool = False) -> str:
 
     notes = [("Assumption", text) for text in report.assumptions]
     notes += [("Warning", text) for text in report.warnings]
+    if usage := _total_usage(report):
+        notes.append(("Usage", usage.removeprefix("LLM usage: ")))
     if notes:
         out.append(paint("Notes", _BOLD))
         for label, text in notes:
@@ -215,7 +275,51 @@ def render_text(report: Report, color: bool = False) -> str:
     return "\n".join(out)
 
 
-def _incident_text(item: ReportIncident, show_findings: bool, paint) -> list[str]:
+def _explanation_text(item: ReportIncident, paint, show_usage: bool) -> list[str]:
+    explanation = item.explanation
+
+    def block(text: str, first: str, rest: str | None = None) -> list[str]:
+        rest = " " * len(first) if rest is None else rest
+        return textwrap.wrap(_clean(text), _WIDTH, initial_indent=first, subsequent_indent=rest)
+
+    out = ["      " + paint("Explanation", _BOLD)]
+    out += block(_audience(explanation), " " * 8)
+    out += block(explanation.summary, " " * 8)
+    if explanation.timeline:
+        out.append("        Timeline")
+        for step in explanation.timeline:
+            out += block(_with_lines(step), "          - ")
+    out.append("        Root-cause hypotheses")
+    for number, hypothesis in enumerate(explanation.hypotheses, 1):
+        out += block(_with_lines(hypothesis), f"          {number}. ")
+        if hypothesis.against:
+            out += block(f"Evidence against it: {_cited(hypothesis.against)}", " " * 13)
+    if explanation.impact:
+        out.append("        Impact")
+        for impact in explanation.impact:
+            out += block(_with_lines(impact), "          - ")
+    if explanation.fix_steps:
+        out.append("        What to do")
+        for number, (text, changes) in enumerate(explanation.fix_steps, 1):
+            mark = f"[{REVIEW}] " if changes else ""
+            out += block(mark + text, f"          {number}. ")
+    if explanation.commands:
+        out.append("        Commands to confirm (read-only)")
+        for command, purpose in explanation.commands:
+            out.append(_shorten(f"          {_clean(command)}"))
+            out += block(f"Healthy: {purpose}", " " * 14)
+    if extra := _extra_unknowns(item):
+        out.append("        Also not known")
+        for unknown in extra:
+            out += block(unknown, "          - ")
+    if show_usage:
+        out += block(f"LLM usage: {_usage(explanation)}", " " * 8)
+    return out
+
+
+def _incident_text(
+    item: ReportIncident, show_findings: bool, paint, show_usage: bool = False
+) -> list[str]:
     incident = item.incident
     badge = paint(f"[{incident.severity.upper()}]", _COLORS[incident.severity])
     out = [f"  {badge} {_clean(item.headline)}"]
@@ -264,6 +368,9 @@ def _incident_text(item: ReportIncident, show_findings: bool, paint) -> list[str
                 _clean(unknown), _WIDTH, initial_indent="        - ", subsequent_indent="          "
             )
 
+    if item.explanation:
+        out += _explanation_text(item, paint, show_usage)
+
     if show_findings and len(item.findings) > 1:
         out.append("      Findings in this incident")
         for finding in sorted(item.findings, key=lambda f: (f.start, f.id)):
@@ -297,6 +404,50 @@ def _code_block(lines: list[str], indent: str = "") -> list[str]:
     longest = max((len(run) for line in lines for run in re.findall(r"`+", line)), default=0)
     fence = "`" * max(3, longest + 1)
     return [f"{indent}{fence}text", *(indent + line for line in lines), f"{indent}{fence}"]
+
+
+def _explanation_markdown(item: ReportIncident, show_usage: bool) -> list[str]:
+    explanation = item.explanation
+
+    def cited(entry: Cited) -> str:
+        where = _cited(entry.lines)
+        return _md(entry.text) + (f" *({where})*" if where else "")
+
+    out = ["", "**Explanation**", "", f"*{_md(_audience(explanation))}*", ""]
+    out += [_md(explanation.summary), ""]
+    if explanation.timeline:
+        out += ["Timeline:", ""]
+        out += [f"- {cited(step)}" for step in explanation.timeline]
+        out.append("")
+    out += ["Root-cause hypotheses:", ""]
+    for number, hypothesis in enumerate(explanation.hypotheses, 1):
+        out.append(f"{number}. {cited(hypothesis)}")
+        if hypothesis.against:
+            out.append(f"   Evidence against it: {_cited(hypothesis.against)}")
+    out.append("")
+    if explanation.impact:
+        out += ["Impact:", ""]
+        out += [f"- {cited(impact)}" for impact in explanation.impact]
+        out.append("")
+    if explanation.fix_steps:
+        out += ["What to do:", ""]
+        for number, (text, changes) in enumerate(explanation.fix_steps, 1):
+            mark = f"**{REVIEW}:** " if changes else ""
+            out.append(f"{number}. {mark}{_md(text)}")
+        out.append("")
+    if explanation.commands:
+        out += ["Commands to confirm (read-only):", ""]
+        for command, purpose in explanation.commands:
+            out += [*_code_block([_clean(command)]), "", f"Healthy: {_md(purpose)}", ""]
+    if extra := _extra_unknowns(item):
+        out += ["Also not known:", ""]
+        out += [f"- {_md(unknown)}" for unknown in extra]
+        out.append("")
+    if show_usage:
+        out += [f"LLM usage: {_usage(explanation)}", ""]
+    while out and out[-1] == "":
+        out.pop()
+    return out
 
 
 def render_markdown(report: Report) -> str:
@@ -357,6 +508,8 @@ def render_markdown(report: Report) -> str:
             if incident.unknowns:
                 out += ["", "**Not known from these logs**", ""]
                 out += [f"- {_md(unknown)}" for unknown in incident.unknowns]
+            if item.explanation:
+                out += _explanation_markdown(item, report.show_usage)
             if report.show_findings and len(item.findings) > 1:
                 out += ["", "**Findings in this incident**", ""]
                 out += ["| Severity | Time | Finding |", "|---|---|---|"]
@@ -382,9 +535,13 @@ def render_markdown(report: Report) -> str:
             out.append(f"| {template.count:,} | {key} | {_md(template.pattern)} |")
         out.append("")
 
-    if report.assumptions or report.warnings:
+    usage = _total_usage(report)
+    if report.assumptions or report.warnings or usage:
         out += ["## Notes", ""]
         out += [f"- **Assumption:** {_md(text)}" for text in report.assumptions]
         out += [f"- **Warning:** {_md(text)}" for text in report.warnings]
+        if usage:
+            label, _, text = usage.partition(": ")
+            out.append(f"- **{label}:** {text}")
         out.append("")
     return "\n".join(out)

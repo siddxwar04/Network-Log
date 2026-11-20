@@ -76,6 +76,43 @@ class StoryRow:
 
 
 @dataclass
+class Cited:
+    """A statement of an explanation with the log lines it rests on."""
+
+    text: str
+    lines: list[int]  # line numbers in the original file
+    ids: list[str]  # the evidence ids as cited: E3, F1, C2
+    # For a hypothesis: what speaks against it.
+    against: list[int] = field(default_factory=list)
+    against_ids: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ReportExplanation:
+    """The plain-English explanation of one incident, ready to show: real names put back,
+    citations turned into line numbers."""
+
+    source: str  # llm, cache or fallback
+    written_by: str  # the same, as a phrase for the reader
+    mode: str  # junior or senior
+    provider: str
+    model: str
+    reason: str | None  # why the LLM's explanation was not used, for a fallback
+    summary: str
+    timeline: list[Cited]
+    hypotheses: list[Cited]
+    impact: list[Cited]
+    fix_steps: list[tuple[str, bool]]  # text, and whether it changes a device
+    commands: list[tuple[str, str]]  # command, and what a healthy result looks like
+    unknowns: list[str]
+    input_tokens: int = 0
+    output_tokens: int = 0
+    latency_ms: int = 0
+    requests: int = 0  # requests made to the LLM for this explanation
+    leftover_tokens: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ReportIncident:
     incident: Incident
     headline: str
@@ -84,6 +121,7 @@ class ReportIncident:
     story: list[StoryRow]
     findings: list[Finding]
     context: list[Finding]
+    explanation: ReportExplanation | None = None
 
 
 @dataclass
@@ -101,6 +139,7 @@ class Report:
     # Every incident by level.
     incident_counts: dict[str, int]
     show_findings: bool = False
+    show_usage: bool = False
     assumptions: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -272,6 +311,8 @@ def build_report(
     assumed_year: int | None = None,
     timezone: str | None = None,
     show_findings: bool = False,
+    show_usage: bool = False,
+    explanations: dict[str, ReportExplanation] | None = None,
     evidence_lines: int = 5,
     top_templates: int = 10,
 ) -> Report:
@@ -279,7 +320,8 @@ def build_report(
     and correlated.
 
     `year` and `timezone` are what the user asked for, or None if they left it to the
-    default; `assumed_year` is the year that was used in that case.
+    default; `assumed_year` is the year that was used in that case. `explanations` holds
+    the explanation of each incident by its id, from `report.explain`.
     """
     upload = db.get_upload(upload_id)
     findings = db.findings(upload_id)
@@ -310,6 +352,7 @@ def build_report(
                 story=_story(db, incident, by_id),
                 findings=members,
                 context=context,
+                explanation=(explanations or {}).get(incident.id),
             )
         )
     shown_incidents.sort(
@@ -336,7 +379,14 @@ def build_report(
         counts=counts,
         incident_counts=incident_counts,
         show_findings=show_findings,
+        show_usage=show_usage,
     )
+    for item in shown_incidents:
+        if item.explanation and item.explanation.leftover_tokens:
+            report.warnings.append(
+                f"The explanation of incident {item.incident.id} still contains stand-ins "
+                f"that could not be replaced: {', '.join(item.explanation.leftover_tokens)}."
+            )
 
     year_assumed, tz_assumed = db.count_assumed(upload_id)
     if year_assumed:
@@ -382,6 +432,44 @@ def _root_json(root) -> dict | None:
         "entity": root.entity,
         "findings": root.finding_ids,
         "explains": root.explains,
+    }
+
+
+def _cited_json(item: Cited, hypothesis: bool = False) -> dict:
+    data = {"text": item.text, "lines": item.lines, "evidence": item.ids}
+    if hypothesis:
+        data["against_lines"], data["against"] = item.against, item.against_ids
+    return data
+
+
+def _explanation_json(explanation: ReportExplanation | None) -> dict | None:
+    if explanation is None:
+        return None
+    return {
+        "source": explanation.source,
+        "written_by": explanation.written_by,
+        "audience": explanation.mode,
+        "provider": explanation.provider,
+        "model": explanation.model,
+        "fallback_reason": explanation.reason,
+        "summary": explanation.summary,
+        "timeline": [_cited_json(item) for item in explanation.timeline],
+        "hypotheses": [_cited_json(item, hypothesis=True) for item in explanation.hypotheses],
+        "impact": [_cited_json(item) for item in explanation.impact],
+        "fix_steps": [
+            {"text": text, "review_before_running": changes}
+            for text, changes in explanation.fix_steps
+        ],
+        "verification_commands": [
+            {"command": command, "purpose": purpose} for command, purpose in explanation.commands
+        ],
+        "unknowns": explanation.unknowns,
+        "usage": {
+            "requests": explanation.requests,
+            "input_tokens": explanation.input_tokens,
+            "output_tokens": explanation.output_tokens,
+            "latency_ms": explanation.latency_ms,
+        },
     }
 
 
@@ -455,6 +543,7 @@ def to_json(report: Report) -> dict:
                     }
                     for row in item.story
                 ],
+                "explanation": _explanation_json(item.explanation),
             }
             for item in report.incidents
         ],

@@ -17,11 +17,15 @@ SCENARIOS = Path("data/scenarios")
 
 
 @pytest.fixture(autouse=True)
-def _no_llm_from_the_environment(monkeypatch):
+def _no_llm_from_the_environment(monkeypatch, tmp_path):
     """The test suite must never make a real API call. Whatever provider and key the
     developer has set for their own use are hidden from every test."""
     for name in ("NETLOG_LLM_PROVIDER", "NETLOG_LLM_MODEL", "NETLOG_LLM_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
+    # The commands read a .env file; keep them away from the developer's own.
+    monkeypatch.setenv("NETLOG_ENV_FILE", "no-such-file.env")
+    # Stored LLM answers go to a database of the test's own, never to data/netlog.db.
+    monkeypatch.setenv("NETLOG_DB_PATH", str(tmp_path / "netlog-cache.db"))
 
 
 @pytest.fixture(scope="session")

@@ -93,6 +93,7 @@ def test_json_report_for_the_link_flap_scenario(capsys):
         "id", "headline", "title", "severity", "severity_reason", "start", "end",
         "duration_seconds", "devices", "root_cause", "alternatives", "confidence",
         "confidence_reason", "unknowns", "findings", "context", "chain", "story",
+        "explanation",
     }  # fmt: skip
     assert incident["findings"] == [finding["id"]]
     assert (finding["incident"], finding["role"]) == (incident["id"], "problem")

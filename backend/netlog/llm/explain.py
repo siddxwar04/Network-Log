@@ -55,6 +55,7 @@ from netlog.storage.database import Database
 
 SCHEMA_NAME = "incident_explanation"
 NOT_CONFIGURED = "no LLM provider is configured"
+SWITCHED_OFF = "the LLM was switched off"
 # How many answers are asked for before giving up: the first, and one retry.
 MAX_TRIES = 2
 
@@ -316,6 +317,7 @@ def explain_incident(
     pack: EvidencePack,
     mode: str = "senior",
     *,
+    use_llm: bool = True,
     provider: Provider | None = None,
     settings: LLMSettings | None = None,
     config: dict | None = None,
@@ -325,12 +327,18 @@ def explain_incident(
     and its answer passes validation, by the built-in explanation otherwise.
 
     The result's `source` says which. When it is "fallback", `reason` says why the LLM's
-    explanation was not used.
+    explanation was not used. With `use_llm` false no request is made, whatever is
+    configured.
     """
-    result = explain_pack(
-        cache, pack, mode, provider=provider, settings=settings, config=config, sleep=sleep
-    )
+    if mode not in MODES:
+        raise ValueError(f"unknown audience mode {mode!r}; choose from {', '.join(MODES)}")
+    if use_llm:
+        result = explain_pack(
+            cache, pack, mode, provider=provider, settings=settings, config=config, sleep=sleep
+        )
+    else:
+        result = ExplanationResult(None, "none", mode, reason=SWITCHED_OFF)
     if result.explanation is None:
-        result.explanation = fallback_explanation(pack, config)
+        result.explanation = fallback_explanation(pack, mode, config)
         result.source = "fallback"
     return result
