@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6",
     "drain3>=0.9.11",
+    "openai>=3.57",
 ]
 
 [project.scripts]
@@ -27,7 +28,7 @@ where = ["backend"]
 include = ["netlog*"]
 
 [tool.setuptools.package-data]
-netlog = ["config/*.toml"]
+netlog = ["config/*.toml", "llm/prompts/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests", "generator/tests"]

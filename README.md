@@ -185,6 +185,20 @@ Check the tool against the answer keys of every sample log:
 .venv\Scripts\python -m eval.scorecard --topology data\scenarios\topology.toml
 ```
 
+See the evidence pack of an incident: the short, numbered case file that is the only thing an LLM will be shown, with addresses and names replaced by stand-ins. Without `--show` it lists the size of every pack:
+
+```powershell
+.venv\Scripts\python -m eval.packs --show 02_cascade
+.venv\Scripts\python -m eval.packs
+```
+
+Ask an LLM to explain an incident from its evidence pack. This is optional and makes a paid request: copy `.env.example` to `.env`, set `NETLOG_LLM_PROVIDER=openai` and your key in `NETLOG_LLM_API_KEY`, then run the command below. Answers are cached, so the same incident is only paid for once. Without a key the command says so and everything else keeps working. The explanation is not part of the `netlog analyze` report yet.
+
+```powershell
+.venv\Scripts\python -m eval.explain 02_cascade
+.venv\Scripts\python -m eval.explain 02_cascade --mode junior
+```
+
 See [docs/CLI.md](docs/CLI.md) for every option, the exit codes and the JSON format.
 
 Run the tests:
@@ -236,12 +250,12 @@ backend/
     config/          default settings and the built-in rules
     report/          text, Markdown and JSON reports
     correlation/     incidents, topology, cause and effect
-    llm/             explanations             (planned)
-    redaction/       hiding addresses and names before they leave the machine (planned)
+    llm/             the evidence pack, the prompt, the provider adapter and the cache
+    redaction/       hiding addresses and names before they leave the machine
     api/             web API                  (planned)
   tests/
 generator/           test log generator
-eval/                scorecard: found against expected, for every sample log
+eval/                scorecard, pack sizes, and a command to try an explanation
 data/scenarios/      generated logs with label files
 docs/                reference documentation
 frontend/            web interface            (planned)
@@ -257,7 +271,7 @@ frontend/            web interface            (planned)
 ## Limitations
 
 - **A root cause is the tool's best reading of the logs, not a verdict.** It is found by applying fixed rules about what can cause what. Each incident states a confidence level and what the logs cannot tell.
-- **No free-form explanation or fix suggestions yet.** The report states what the rules established. That is the next stage.
+- **Explanations are not checked or shown in the report yet.** An LLM can be asked to explain an incident, and its answer must have a fixed structure with citations, but nothing yet verifies that the citations are real, and the report still states only what the rules established.
 - **Tested on generated logs only.** The sample logs follow real Cisco IOS, OpenSSH and ISC dhcpd formats, but they come from this project's own generator, so the results show the tool is consistent with its design, not that it works on every network. Testing on logs from real devices is planned.
 - **Little knowledge of your network.** The tool cannot tell a core uplink from a desk port unless you list what is critical in the settings, so an interface going down is Info on its own. It also cannot know which cable goes where; a small topology file fills that in.
 - **Cisco IOS first.** Other vendors will follow once the pipeline is complete.
