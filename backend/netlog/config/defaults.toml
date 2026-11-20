@@ -84,3 +84,115 @@ owner_min_support = 0.5
 # Repeats of one template on one device are counted as a single run while each repeat
 # comes within this many seconds of the one before.
 max_gap_seconds = 60
+
+[evidence]
+# The evidence pack is the short case file about one incident, and the only thing an LLM
+# is ever shown. It must stay small: this is the hard limit on its size. Tokens cannot be
+# counted exactly without the provider's own tokenizer, so the size is estimated from
+# the number of characters.
+max_tokens = 3000
+chars_per_token = 4
+# Limits on how many items of each kind a pack may hold. What is left out is counted
+# under "omitted" in the pack.
+max_findings = 40
+max_chain_links = 40
+max_templates = 15
+max_evidence_lines = 30
+# Example log lines per message pattern, taken from different devices where possible.
+examples_per_template = 3
+# Longer log lines and longer descriptions are cut at this many characters.
+max_line_chars = 300
+max_text_chars = 240
+# Numbers a rule records that say how the rule works, not what happened. Left out of
+# the pack.
+omit_details = [
+    "peak_count",
+    "threshold",
+    "window_seconds",
+    "within_seconds",
+    "rate_per_minute",
+    "state_to",
+    "related_direction",
+    "related_error_code",
+    "recovered_at",
+    "succeeded_at",
+]
+
+[redaction]
+# Replace addresses, device names, usernames and MAC addresses with stand-ins (IP_7,
+# HOST_2, USER_3, MAC_4) before a pack leaves this machine. Turn this off only for a
+# model that runs locally.
+enabled = true
+# Remove passwords, keys and community strings altogether. This stays on even when
+# `enabled` is off: a secret has no place in an explanation.
+remove_secrets = true
+# An address inside one of these ranges is described to the LLM as "private", any other
+# as "public". Nothing else about an address is told.
+private_networks = [
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "100.64.0.0/10",
+    "169.254.0.0/16",
+    "127.0.0.0/8",
+    "fc00::/7",
+    "fe80::/10",
+    "::1/128",
+]
+
+# What a secret looks like. In each pattern the part named `secret` is removed and the
+# rest of the line is kept. Applied in order.
+[[redaction.secrets]]
+name = "private key"
+pattern = '-----BEGIN [A-Z ]*PRIVATE KEY-----(?P<secret>.+)'
+
+[[redaction.secrets]]
+name = "login in a URL"
+pattern = '://(?P<secret>[^/\s:@]+:[^/\s@]+)@'
+
+[[redaction.secrets]]
+name = "name=value"
+pattern = '(?i)\b(?:password|passwd|passphrase|secret|token|api[_-]?key|access[_-]?key|auth[_-]?key|community|signature|sig)\s*[=:]\s*(?P<secret>"[^"]*"|[^\s&;,]+)'
+
+[[redaction.secrets]]
+name = "authorization header"
+pattern = '(?i)\b(?:Bearer|Basic)\s+(?P<secret>[A-Za-z0-9._~+/=-]{8,})'
+
+[[redaction.secrets]]
+name = "SNMP community"
+pattern = '(?i)\bsnmp\S*\b.{0,60}?\bcommunity(?:\s+string)?[\s:=]+(?P<secret>\S+)'
+
+[[redaction.secrets]]
+name = "device configuration command"
+pattern = '(?i)\b(?:enable\s+(?:password|secret)|username\s+\S+\s+(?:privilege\s+\d+\s+)?(?:password|secret)|neighbor\s+\S+\s+password|(?:tacacs-server|radius-server)(?:\s+host\s+\S+)?\s+key|key-string|authentication-key|pre-shared-key|wpa-psk\s+ascii)\s+(?:\d\s+)?(?P<secret>\S+)'
+
+[[redaction.secrets]]
+name = "typed password"
+pattern = '(?i)\b(?:password|secret|md5)\s+\d\s+(?P<secret>\S+)'
+
+[llm]
+# Which service writes the incident explanations. Empty means none: the tool then works
+# without an LLM. Supported: "openai".
+# The NETLOG_LLM_PROVIDER and NETLOG_LLM_MODEL environment variables override these two.
+# The API key is never written here: it is read from NETLOG_LLM_API_KEY, which can be put
+# in a file named .env (that file is ignored by git).
+provider = ""
+# Empty means the provider's default from [llm.default_models] below.
+model = ""
+# Seconds to wait for one answer.
+timeout_seconds = 60
+# After a rate limit, a server error or a timeout, try again this many times, waiting
+# backoff_seconds, then twice that, then twice that again.
+max_retries = 3
+backoff_seconds = 2
+# The most the model may write. Models that reason before answering spend part of this
+# on reasoning, so it is set well above the size of an explanation.
+max_output_tokens = 4000
+# How hard a reasoning model should think. An explanation restates facts that are
+# already decided, so "low" is enough. Empty to leave it to the model's default.
+reasoning_effort = "low"
+# The prompt file in netlog/llm/prompts/, without ".md".
+prompt = "explain_v1"
+
+[llm.default_models]
+openai = "gpt-6-luna"

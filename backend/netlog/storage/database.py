@@ -180,6 +180,52 @@ _MIGRATIONS = (
     ALTER TABLE incidents ADD COLUMN confidence_reason TEXT NOT NULL DEFAULT '';
     ALTER TABLE incidents ADD COLUMN unknowns TEXT NOT NULL DEFAULT '[]';
     """,
+    # Version 6: the stand-ins used for addresses and names in what is sent to an LLM.
+    # This table is the only place the real values are kept next to their tokens.
+    """
+    CREATE TABLE redaction_map (
+        upload_id INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+        token     TEXT NOT NULL,
+        kind      TEXT NOT NULL,
+        original  TEXT NOT NULL,
+        PRIMARY KEY (upload_id, token)
+    ) WITHOUT ROWID;
+    CREATE UNIQUE INDEX redaction_by_original ON redaction_map (upload_id, original);
+    """,
+    # Version 7: explanations written by an LLM, kept so the same question is never paid
+    # for twice, and a record of every request. Neither belongs to an upload: the same
+    # incident in a file uploaded again is the same question.
+    """
+    CREATE TABLE explanations (
+        cache_key      TEXT PRIMARY KEY,
+        pack_hash      TEXT NOT NULL,
+        prompt_version TEXT NOT NULL,
+        provider       TEXT NOT NULL,
+        model          TEXT NOT NULL,
+        mode           TEXT NOT NULL,
+        content        TEXT NOT NULL,
+        input_tokens   INTEGER NOT NULL,
+        output_tokens  INTEGER NOT NULL,
+        created_at     INTEGER NOT NULL
+    ) WITHOUT ROWID;
+
+    CREATE TABLE llm_calls (
+        id            INTEGER PRIMARY KEY,
+        incident_id   TEXT,
+        cache_key     TEXT,
+        provider      TEXT NOT NULL,
+        model         TEXT NOT NULL,
+        mode          TEXT NOT NULL,
+        status        TEXT NOT NULL,
+        cache_hit     INTEGER NOT NULL,
+        error         TEXT,
+        input_tokens  INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        latency_ms    INTEGER NOT NULL DEFAULT 0,
+        attempts      INTEGER NOT NULL DEFAULT 0,
+        created_at    INTEGER NOT NULL
+    );
+    """,
 )
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -260,6 +306,42 @@ class Template:
     last_seen: datetime | None
     hosts: tuple[str, ...]
     examples: tuple[int, ...]  # ids of up to a few events that match the pattern
+
+
+@dataclass(frozen=True)
+class StoredExplanation:
+    """An LLM's answer as it was received, with what produced it."""
+
+    cache_key: str
+    pack_hash: str
+    prompt_version: str
+    provider: str
+    model: str
+    mode: str
+    content: str
+    input_tokens: int
+    output_tokens: int
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class LLMCall:
+    """One request for an explanation: answered by the provider, by the cache, or not."""
+
+    id: int
+    incident_id: str | None
+    cache_key: str | None
+    provider: str
+    model: str
+    mode: str
+    status: str  # ok, cached, malformed, error
+    cache_hit: bool
+    error: str | None
+    input_tokens: int
+    output_tokens: int
+    latency_ms: int
+    attempts: int
+    created_at: datetime
 
 
 @dataclass
@@ -759,6 +841,121 @@ class Database:
             confidence_reason=row["confidence_reason"],
             unknowns=json.loads(row["unknowns"]),
         )
+
+    # --- Redaction ------------------------------------------------------------------------
+
+    def save_redaction_map(self, upload_id: int, entries: Iterable[tuple[str, str, str]]) -> None:
+        """Add (token, kind, original) entries to an upload's redaction map. Entries that
+        are already stored are left as they are: a token never changes its meaning."""
+        with self._db:
+            self._db.executemany(
+                "INSERT OR IGNORE INTO redaction_map (upload_id, token, kind, original) "
+                "VALUES (?, ?, ?, ?)",
+                ((upload_id, token, kind, original) for token, kind, original in entries),
+            )
+
+    def redaction_map(self, upload_id: int) -> list[tuple[str, str, str]]:
+        """An upload's redaction map as (token, kind, original)."""
+        rows = self._db.execute(
+            "SELECT token, kind, original FROM redaction_map WHERE upload_id = ? ORDER BY token",
+            (upload_id,),
+        )
+        return [(row[0], row[1], row[2]) for row in rows]
+
+    # --- Explanations ---------------------------------------------------------------------
+
+    def save_explanation(
+        self,
+        cache_key: str,
+        *,
+        pack_hash: str,
+        prompt_version: str,
+        provider: str,
+        model: str,
+        mode: str,
+        content: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> None:
+        with self._db:
+            self._db.execute(
+                "INSERT OR REPLACE INTO explanations (cache_key, pack_hash, prompt_version, "
+                "provider, model, mode, content, input_tokens, output_tokens, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    cache_key,
+                    pack_hash,
+                    prompt_version,
+                    provider,
+                    model,
+                    mode,
+                    content,
+                    input_tokens,
+                    output_tokens,
+                    _to_micros(datetime.now(UTC)),
+                ),
+            )
+
+    def get_explanation(self, cache_key: str) -> StoredExplanation | None:
+        row = self._db.execute(
+            "SELECT * FROM explanations WHERE cache_key = ?", (cache_key,)
+        ).fetchone()
+        if row is None:
+            return None
+        values = dict(row)
+        values["created_at"] = _from_micros(values["created_at"])
+        return StoredExplanation(**values)
+
+    def add_llm_call(
+        self,
+        *,
+        incident_id: str | None,
+        cache_key: str | None,
+        provider: str,
+        model: str,
+        mode: str,
+        status: str,
+        cache_hit: bool = False,
+        error: str | None = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        latency_ms: int = 0,
+        attempts: int = 0,
+    ) -> None:
+        with self._db:
+            self._db.execute(
+                "INSERT INTO llm_calls (incident_id, cache_key, provider, model, mode, status, "
+                "cache_hit, error, input_tokens, output_tokens, latency_ms, attempts, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    incident_id,
+                    cache_key,
+                    provider,
+                    model,
+                    mode,
+                    status,
+                    int(cache_hit),
+                    error,
+                    input_tokens,
+                    output_tokens,
+                    latency_ms,
+                    attempts,
+                    _to_micros(datetime.now(UTC)),
+                ),
+            )
+
+    def llm_calls(self, incident_id: str | None = None) -> list[LLMCall]:
+        """Every request for an explanation, oldest first; for one incident if given."""
+        sql, params = "SELECT * FROM llm_calls", ()
+        if incident_id is not None:
+            sql, params = sql + " WHERE incident_id = ?", (incident_id,)
+        calls = []
+        for row in self._db.execute(sql + " ORDER BY id", params):
+            values = dict(row)
+            values["cache_hit"] = bool(values["cache_hit"])
+            values["created_at"] = _from_micros(values["created_at"])
+            calls.append(LLMCall(**values))
+        return calls
 
     def events_by_id(self, event_ids: Iterable[int]) -> list[Event]:
         """The events with the given ids, in time order."""
