@@ -6,6 +6,8 @@
                                       store the answers with them
     netlog rules test <rules> <log>   try a rule file on a log file before relying on it
     netlog replay <file>              send a log file to the live listener, as if now
+    netlog alerts test                send a test alert to the configured webhooks
+    netlog alerts silence ...         silence alerts for planned maintenance
 
 Exit codes, so the tool can be used in scripts:
     0   nothing found at or above the minimum severity
@@ -24,6 +26,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from netlog import __version__
+from netlog.alerts_cli import add_parser as add_alerts_parser
+from netlog.alerts_cli import alerts_command
 from netlog.config import load_config
 from netlog.correlation.grouping import correlate
 from netlog.correlation.priors import load_priors
@@ -194,6 +198,8 @@ def _parser() -> argparse.ArgumentParser:
     )  # fmt: skip
     replay.add_argument("--start", metavar="HH:MM", help="skip lines before this time of day")
     replay.add_argument("--end", metavar="HH:MM", help="stop after this time of day")
+
+    add_alerts_parser(commands)
     return parser
 
 
@@ -418,6 +424,8 @@ def main(argv: list[str] | None = None, provider: Provider | None = None) -> int
         return rules_test(args)
     if args.command == "replay":
         return replay_file(args)
+    if args.command == "alerts":
+        return alerts_command(args)
 
     progress = _Progress(enabled=not args.quiet and sys.stderr.isatty())
     try:

@@ -37,6 +37,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from netlog import __version__
+from netlog.alerts.alerter import Alerter, add_silence, alerter_from_config
 from netlog.api.pipeline import STAGES, Job, PipelineRunner
 from netlog.config import load_config
 from netlog.detection.rules import (
@@ -241,6 +242,51 @@ class RuleChange(BaseModel):
     )
 
 
+class SilenceRequest(BaseModel):
+    """What to silence and for how long. Name a device, or an incident type, or set
+    `all`; exactly one of the three."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    device: str | None = Field(None, max_length=200, description="A device name, such as R1.")
+    type: str | None = Field(
+        None, max_length=100, description="A rule name such as link_flap, or link_failure."
+    )
+    all: bool = Field(False, description="Silence every alert.")
+    minutes: float = Field(..., gt=0, description="How long the silence lasts.")
+    reason: str = Field("", max_length=200, description="Why, such as planned maintenance.")
+
+
+def alert_json(alert: dict) -> dict:
+    """A recorded alert as the API shows it. The webhook address is never part of it."""
+    message = alert["message"]
+    return {
+        "id": alert["id"],
+        "kind": alert["kind"],
+        "incident_id": alert["incident_id"],
+        "severity": alert["severity"],
+        "status": alert["status"],
+        "title": message.get("title"),
+        "created_at": _iso(alert["created_at"]),
+        "sent_at": _iso(alert["sent_at"]),
+        "deliveries": alert["deliveries"],
+        "digest_id": alert["digest_id"],
+        "silence_id": alert["silence_id"],
+    }
+
+
+def silence_json(silence: dict, now: datetime) -> dict:
+    return {
+        "id": silence["id"],
+        "scope": silence["scope"],
+        "value": silence["value"],
+        "starts_at": _iso(silence["starts_at"]),
+        "ends_at": _iso(silence["ends_at"]),
+        "active": silence["starts_at"] <= now < silence["ends_at"],
+        "reason": silence["reason"],
+    }
+
+
 def kind_of(event_key: str | None) -> str:
     for prefix, kind in _KINDS:
         if event_key and event_key.startswith(prefix):
@@ -289,9 +335,11 @@ def create_app(
     settings: ApiSettings | None = None,
     llm: LLMSettings | None = None,
     provider: Provider | None = None,
+    alerts: Alerter | None = None,
 ) -> FastAPI:
     """Build the API. `provider` replaces the configured LLM provider, which is how tests
-    supply a fake; `settings` and `llm` replace what the settings files say."""
+    supply a fake; `settings`, `llm` and `alerts` replace what the settings files and the
+    environment say."""
     config = config or load_config()
     settings = settings or api_settings(config)
     llm = llm or llm_settings(config)
@@ -300,9 +348,10 @@ def create_app(
     for warning in load_rule_set(config=config).warnings:
         log.warning("rules: %s", warning)
     runner = PipelineRunner(settings.workers)
+    alerts = alerts or alerter_from_config(settings.db_path, config)
     # The live syslog listener runs inside the API when it is switched on.
     live = (
-        LiveService(settings.db_path, config, llm=llm, provider=provider)
+        LiveService(settings.db_path, config, llm=llm, provider=provider, alerts=alerts)
         if live_enabled(config)
         else None
     )
@@ -346,11 +395,13 @@ def create_app(
             {"name": "demo", "description": "Built-in scenarios that need no file of your own."},
             {"name": "rules", "description": "The detection rules in force, and changing them."},
             {"name": "live", "description": "Messages sent by devices as things happen."},
+            {"name": "alerts", "description": "Chat messages about serious live incidents."},
             {"name": "system", "description": "Whether the API is up."},
         ],
     )
     app.state.runner = runner
     app.state.live = live
+    app.state.alerts = alerts
     app.state.settings = settings
     app.add_middleware(
         CORSMiddleware,
@@ -1093,6 +1144,76 @@ def create_app(
             "open_incidents": open_ones,
             "closed_incidents": closed[:20],
         }
+
+    # --- Alerts ----------------------------------------------------------------------------
+
+    @app.get("/api/alerts", tags=["alerts"], summary="Alert settings, silences, recent alerts")
+    def alerts_status(limit: Limit = page_default, offset: Offset = 0) -> dict:
+        """Whether alerts are on and which kinds of webhook are set (never their
+        addresses), the rules for sending, the silences, and the alerts recorded, newest
+        first: sent, failed, held back for a digest, or silenced."""
+        now = datetime.now(UTC)
+        with database() as db:
+            recorded = db.alerts()
+            silences = db.silences()
+        return {
+            "enabled": alerts.enabled,
+            "listener_running": live is not None,
+            **alerts.settings.public(),
+            "silences": [silence_json(s, now) for s in silences[:50]],
+            "alerts": page(
+                [alert_json(a) for a in recorded[offset : offset + limit]],
+                len(recorded), limit, offset,
+            ),
+        }  # fmt: skip
+
+    @app.post("/api/alerts/test", tags=["alerts"], summary="Send a test alert")
+    def send_test_alert() -> dict:
+        """Sends a clearly labelled test alert to every webhook that is set, straight
+        away, to check the setup. Says for each whether it arrived, and if not, why."""
+        if not alerts.enabled:
+            raise ApiError(
+                409, "alerts_off",
+                "No webhook is set. Put NETLOG_ALERT_SLACK_URL or NETLOG_ALERT_WEBHOOK_URL "
+                "in .env and restart the server.",
+            )  # fmt: skip
+        return alerts.send_test(datetime.now(UTC))
+
+    @app.post(
+        "/api/alerts/silences", status_code=201, tags=["alerts"], summary="Silence alerts"
+    )
+    def create_silence(request: SilenceRequest) -> dict:
+        """Silences a device, an incident type, or everything, for a number of minutes,
+        for planned maintenance. Incidents are still detected and recorded; only the chat
+        messages stop. An incident alerted as silenced is not alerted again at the same
+        severity when the silence ends."""
+        chosen = [scope for scope, given in (("device", request.device), ("type", request.type),
+                                             ("all", request.all)) if given]  # fmt: skip
+        if len(chosen) != 1:
+            raise ApiError(400, "invalid_silence", "Give exactly one of: device, type, or all.")
+        scope = chosen[0]
+        value = None if scope == "all" else getattr(request, scope)
+        try:
+            silence = add_silence(
+                settings.db_path, alerts.settings, scope, value, request.minutes,
+                request.reason, datetime.now(UTC),
+            )  # fmt: skip
+        except ValueError as error:
+            raise ApiError(400, "invalid_silence", str(error)) from None
+        return silence_json(silence, datetime.now(UTC))
+
+    @app.delete(
+        "/api/alerts/silences/{silence_id}", tags=["alerts"], summary="End a silence early"
+    )
+    def end_silence(silence_id: int) -> dict:
+        """Ends a silence now, before the time it was set for. It stays in the list, with
+        its new end, as a record of the maintenance."""
+        now = datetime.now(UTC)
+        with database() as db:
+            if not db.end_silence(silence_id, now):
+                raise ApiError(404, "silence_not_found", "There is no silence with that id.")
+            silence = next(s for s in db.silences() if s["id"] == silence_id)
+        return silence_json(silence, now)
 
     # --- Demo scenarios -------------------------------------------------------------------
 
