@@ -29,17 +29,24 @@ def detect(
     upload_id: int,
     rules: list[Rule] | None = None,
     config: dict | None = None,
+    *,
+    until: datetime | None = None,
 ) -> list[Finding]:
     """Run every enabled rule over an upload, store the findings and return them.
 
-    Running it again replaces the previous findings.
+    Running it again replaces the previous findings. `until` is when observation ended,
+    if later than the last message: for live messages it is now, so something that went
+    down and has not come back counts as down until now, not until the last message.
     """
     settings = config if config is not None else load_config()
     findings: list[Finding] = []
     for rule in rules if rules is not None else load_rules():
         if not rule.enabled:
             continue
-        found = _RUNNERS[rule.kind](db, upload_id, rule)
+        if rule.kind == "absence":
+            found = _run_absence(db, upload_id, rule, until)
+        else:
+            found = _RUNNERS[rule.kind](db, upload_id, rule)
         for finding in found:
             score(finding, rule, settings)
         findings += found
@@ -240,7 +247,9 @@ def _run_sequence(db: Database, upload_id: int, rule: Rule) -> list[Finding]:
     return findings
 
 
-def _run_absence(db: Database, upload_id: int, rule: Rule) -> list[Finding]:
+def _run_absence(
+    db: Database, upload_id: int, rule: Rule, until: datetime | None = None
+) -> list[Finding]:
     """`first` happened and `then` did not follow within the time allowed.
 
     Used for outages: something went down (`first`) and did not come back (`then`) soon
@@ -252,6 +261,8 @@ def _run_absence(db: Database, upload_id: int, rule: Rule) -> list[Finding]:
     thens = _grouped(_matching(db, upload_id, rule.then), rule.same)
     span = db.time_range(upload_id)
     log_end = span[1] if span else None
+    if until is not None and (log_end is None or until > log_end):
+        log_end = until
 
     findings = []
     for key, starts in firsts.items():

@@ -245,6 +245,24 @@ _MIGRATIONS = (
     ALTER TABLE uploads ADD COLUMN source TEXT NOT NULL DEFAULT 'file';
     UPDATE uploads SET stage = status WHERE status IN ('done', 'failed');
     """,
+    # Version 10: the live syslog listener. Its messages are stored under one long-lived
+    # upload whose source is "live". Each live incident keeps one id for its whole life;
+    # this table holds that id, whether it is open or closed, when it last changed, the
+    # findings it is made of, and how many times it has been explained.
+    """
+    CREATE TABLE live_incidents (
+        id             TEXT PRIMARY KEY,
+        upload_id      INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+        state          TEXT NOT NULL,
+        opened_at      INTEGER NOT NULL,
+        changed_at     INTEGER NOT NULL,
+        closed_at      INTEGER,
+        snapshot       TEXT NOT NULL,
+        explained_hash TEXT,
+        explanations   INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX live_incidents_by_upload ON live_incidents (upload_id, opened_at);
+    """,
 )
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -689,9 +707,7 @@ class Database:
     def iter_events(self, upload_id: int, where: EventFilter | None = None) -> Iterator[Event]:
         """Every matching event in time order, without paging. For detection rules."""
         clause, params = (where or EventFilter()).to_sql(upload_id)
-        rows = self._db.execute(
-            f"{_SELECT_EVENT} WHERE {clause} ORDER BY e.ts, e.line_no", params
-        )
+        rows = self._db.execute(f"{_SELECT_EVENT} WHERE {clause} ORDER BY e.ts, e.line_no", params)
         for row in rows:
             yield self._event(row)
 
@@ -1081,6 +1097,104 @@ class Database:
             values["created_at"] = _from_micros(values["created_at"])
             calls.append(LLMCall(**values))
         return calls
+
+    # --- The live listener ----------------------------------------------------------------
+
+    def live_upload(self) -> int:
+        """The id of the upload that holds live messages, created the first time."""
+        row = self._db.execute(
+            "SELECT id FROM uploads WHERE source = 'live' ORDER BY id LIMIT 1"
+        ).fetchone()
+        if row is not None:
+            return row[0]
+        upload_id = self.create_upload("live syslog", 0, timezone="UTC", source="live")
+        with self._db:
+            self._db.execute(
+                "UPDATE uploads SET status = 'done', stage = 'done', finished_at = ? WHERE id = ?",
+                (_to_micros(datetime.now(UTC)), upload_id),
+            )
+        return upload_id
+
+    def next_line_no(self, upload_id: int) -> int:
+        """The number the next stored line of an upload gets: live messages are numbered
+        in the order they arrived, like the lines of a file."""
+        return (self._scalar(
+            "SELECT COALESCE(MAX(line_no), 0) FROM raw_lines WHERE upload_id = ?", (upload_id,)
+        ) or 0) + 1  # fmt: skip
+
+    def refresh_counts(self, upload_id: int) -> None:
+        """Set an upload's line counts from the events it holds now."""
+        counts = dict(
+            self._db.execute(
+                "SELECT parse_status, COUNT(*) FROM events WHERE upload_id = ? "
+                "GROUP BY parse_status",
+                (upload_id,),
+            ).fetchall()
+        )
+        total = sum(counts.values())
+        with self._db:
+            self._db.execute(
+                "UPDATE uploads SET line_count = ?, parsed = ?, partial = ?, unparsed = ?, "
+                "classified = (SELECT COUNT(*) FROM events WHERE upload_id = ? "
+                "AND event_key IS NOT NULL) WHERE id = ?",
+                (total, counts.get("parsed", 0), counts.get("partial", 0),
+                 counts.get("unparsed", 0), upload_id, upload_id),
+            )  # fmt: skip
+
+    def prune_events(self, upload_id: int, before: datetime, keep: Iterable[int]) -> int:
+        """Delete an upload's events older than `before`, and their raw lines, except the
+        events in `keep`. Returns how many were deleted."""
+        keep_ids = sorted(set(keep))
+        with self._db:
+            self._db.execute("CREATE TEMP TABLE IF NOT EXISTS keep_events (id INTEGER PRIMARY KEY)")
+            self._db.execute("DELETE FROM keep_events")
+            self._db.executemany(
+                "INSERT INTO keep_events (id) VALUES (?)", ((i,) for i in keep_ids)
+            )
+            doomed = "upload_id = ? AND ts < ? AND id NOT IN (SELECT id FROM keep_events)"
+            params = (upload_id, _to_micros(before))
+            self._db.execute(
+                "DELETE FROM raw_lines WHERE upload_id = ? AND line_no IN "
+                f"(SELECT line_no FROM events WHERE {doomed})",
+                (upload_id, *params),
+            )
+            deleted = self._db.execute(f"DELETE FROM events WHERE {doomed}", params).rowcount
+            self._db.execute("DELETE FROM keep_events")
+        return deleted
+
+    def live_incidents(self, upload_id: int) -> list[dict]:
+        rows = self._db.execute(
+            "SELECT * FROM live_incidents WHERE upload_id = ? ORDER BY opened_at, id", (upload_id,)
+        )
+        return [
+            {
+                **dict(row),
+                "opened_at": _from_micros(row["opened_at"]),
+                "changed_at": _from_micros(row["changed_at"]),
+                "closed_at": _from_micros(row["closed_at"]),
+                "snapshot": json.loads(row["snapshot"]),
+            }
+            for row in rows
+        ]
+
+    def save_live_incidents(self, upload_id: int, items: Iterable[dict]) -> None:
+        """Replace the live incidents of an upload."""
+        with self._db:
+            self._db.execute("DELETE FROM live_incidents WHERE upload_id = ?", (upload_id,))
+            self._db.executemany(
+                "INSERT INTO live_incidents (id, upload_id, state, opened_at, changed_at, "
+                "closed_at, snapshot, explained_hash, explanations) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    (
+                        item["id"], upload_id, item["state"], _to_micros(item["opened_at"]),
+                        _to_micros(item["changed_at"]), _to_micros(item["closed_at"]),
+                        json.dumps(item["snapshot"], ensure_ascii=False),
+                        item.get("explained_hash"), item.get("explanations", 0),
+                    )
+                    for item in items
+                ),
+            )  # fmt: skip
 
     def events_by_id(self, event_ids: Iterable[int]) -> list[Event]:
         """The events with the given ids, in time order."""

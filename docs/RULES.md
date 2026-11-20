@@ -2,7 +2,7 @@
 
 Every rule the tool ships with: what it detects, the log lines it looks for, its thresholds, how serious the result is, what usually causes the problem, and when the rule can be wrong.
 
-Rules are data, not code. They live in `backend/netlog/config/rules.toml`, and the thresholds below are the defaults in that file.
+Rules are data, not code. They live in `backend/netlog/config/rules.toml`, and the thresholds below are the defaults in that file. To change a threshold, switch a rule off, list your critical devices or add rules of your own without touching that file, see [WRITING_RULES.md](WRITING_RULES.md).
 
 ## How a rule works
 

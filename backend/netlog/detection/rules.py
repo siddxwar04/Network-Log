@@ -7,10 +7,11 @@ is) lives in `config/rules.toml`.
 
 from __future__ import annotations
 
+import json
 import os
 import string
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from importlib import resources
 from pathlib import Path
 
@@ -203,7 +204,7 @@ class _Reader:
     def number(self, key: str, default: float | None = None, *, whole: bool = False):
         value = self.table.get(key, default)
         if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0:
-            raise self.fail(key, "must be a number greater than zero")
+            raise self.fail(key, f"must be a number greater than zero, not {value!r}")
         if whole and not float(value).is_integer():
             raise self.fail(key, "must be a whole number")
         return int(value) if whole else float(value)
@@ -256,9 +257,15 @@ class _Reader:
 
 def _check_title(reader: _Reader, title: str, known: set[str]) -> None:
     try:
-        names = {name for _, name, _, _ in string.Formatter().parse(title) if name}
+        parts = list(string.Formatter().parse(title))
     except ValueError as error:
         raise reader.fail("title", f"is not a valid template: {error}") from None
+    # A title only names values. Formatting such as {count:>99999999} or {host!r} could
+    # make a huge string or reach into Python, so it is refused.
+    for _, name, spec, conversion in parts:
+        if name is not None and (spec or conversion):
+            raise reader.fail("title", f"formats {{{name}}}; write the name alone, as {{{name}}}")
+    names = {name for _, name, _, _ in parts if name}
     for name in names - known:
         raise reader.fail("title", f"uses {{{name}}}, which this rule does not provide")
 
@@ -400,20 +407,280 @@ def parse_rules(text: str, source: str = "rules") -> list[Rule]:
     return rules
 
 
-def load_rules(path: str | Path | None = None) -> list[Rule]:
-    """The built-in rules, with a user file's rules replacing or adding to them.
+# --- A user's own rule file ------------------------------------------------------------------
+#
+# Besides [[rule]] tables, which add a rule or replace a built-in one of the same name, a
+# user file may hold:
+#
+#   [[override]]   change some settings of an existing rule and keep the rest
+#   [critical]     devices and interfaces whose findings are one level more serious
 
-    A user rule with the name of a built-in rule replaces it completely. The user file is
-    `path`, or the file named by the NETLOG_RULES environment variable.
+# The settings an override may change, and the kinds of rule each applies to.
+OVERRIDABLE = {
+    "enabled": KINDS,
+    "severity": KINDS,
+    "severity_because": KINDS,
+    "strong_at": KINDS,
+    "threshold": ("threshold",),
+    "window_seconds": ("threshold",),
+    "within_seconds": ("sequence", "absence"),
+}
+_CRITICAL_KEYS = {"devices", "interfaces"}
+USER_FILE_SECTIONS = {"rule", "override", "critical"}
+
+
+@dataclass
+class RuleSet:
+    """The rules in force: the built-in ones, changed and added to by a user file."""
+
+    rules: list[Rule]
+    # Not mistakes, but worth a look: a message type no parser produces may be a typo.
+    warnings: list[str] = field(default_factory=list)
+    critical_devices: list[str] = field(default_factory=list)
+    critical_interfaces: list[dict] = field(default_factory=list)
+    # Where each rule comes from: "built-in", "built-in, changed" or "your file".
+    origin: dict[str, str] = field(default_factory=dict)
+    overrides: dict[str, dict] = field(default_factory=dict)
+    user_file: Path | None = None
+
+    def by_name(self, name: str) -> Rule | None:
+        return next((rule for rule in self.rules if rule.name == name), None)
+
+    def severity_settings(self, config: dict) -> dict:
+        """The settings with the user file's critical devices and interfaces added, for
+        the severity rules to use."""
+        severity = dict(config.get("severity", {}))
+        devices = severity.get("critical_devices", [])
+        interfaces = severity.get("critical_interfaces", [])
+        severity["critical_devices"] = list(dict.fromkeys([*devices, *self.critical_devices]))
+        severity["critical_interfaces"] = [
+            *interfaces,
+            *(entry for entry in self.critical_interfaces if entry not in interfaces),
+        ]
+        return {**config, "severity": severity}
+
+
+def apply_override(rule: Rule, settings: dict) -> Rule:
+    """The rule with some of its settings changed. Every value is checked the way it is
+    checked in a [[rule]] table, and a setting that does not fit the rule is refused."""
+    reader = _Reader(rule.name, settings, "override ")
+    changes: dict = {}
+    for key, value in settings.items():
+        if key == "name":
+            continue
+        if key not in OVERRIDABLE:
+            known = ", ".join(sorted(OVERRIDABLE))
+            raise reader.fail(key, f"is not a setting an override can change (known: {known})")
+        if rule.kind not in OVERRIDABLE[key]:
+            raise reader.fail(key, f"does not apply to a {rule.kind} rule")
+        if key == "enabled":
+            if not isinstance(value, bool):
+                raise reader.fail(key, "must be true or false")
+            changes[key] = value
+        elif key == "severity":
+            changes[key] = reader.level(key)
+        elif key == "severity_because":
+            changes[key] = reader.text(key)
+        elif key == "threshold":
+            changes[key] = reader.number(key, whole=True)
+        else:
+            changes[key] = reader.number(key)
+    return replace(rule, **changes)
+
+
+def _known_event_keys() -> set[str]:
+    """The message types the parsers produce, for spotting a typo in a rule file."""
+    from netlog.parsers import cisco, dhcp, linux_auth
+
+    known = set(cisco._EXTRACTORS)
+    for patterns in (linux_auth._SSHD, dhcp._DHCPD):
+        known |= {key for key, _, _ in patterns._rules}
+    known |= {"sudo.auth_failure", "sudo.not_in_sudoers", "dhcp.no_free_leases"}
+    for service in ("sshd", "sudo", "cron", "login", "su"):
+        known |= {f"{service}.session_opened", f"{service}.session_closed"}
+    return known
+
+
+def event_keys_of(rule: Rule) -> list[str]:
+    """Every message type a rule looks at."""
+    matchers = [rule.matcher, rule.first, rule.then]
+    if rule.followed_by:
+        matchers.append(rule.followed_by.matcher)
+    if rule.related:
+        matchers.append(rule.related.matcher)
+    return [key for matcher in matchers if matcher for key in matcher.event_keys]
+
+
+def _critical(table: object, source: str) -> tuple[list[str], list[dict]]:
+    if not isinstance(table, dict):
+        raise RuleError(f"{source}: [critical] must be a table with devices and interfaces")
+    for key in table:
+        if key not in _CRITICAL_KEYS:
+            raise RuleError(
+                f"{source}: [critical] {key} is not a known setting (known: devices, interfaces)"
+            )
+    devices = table.get("devices", [])
+    if not isinstance(devices, list) or not all(isinstance(d, str) and d for d in devices):
+        raise RuleError(f"{source}: [critical] devices must be a list of device names")
+    interfaces = table.get("interfaces", [])
+    if not isinstance(interfaces, list):
+        raise RuleError(f"{source}: [critical] interfaces must be a list of tables")
+    for entry in interfaces:
+        if (
+            not isinstance(entry, dict)
+            or set(entry) != {"host", "interface"}
+            or not all(isinstance(value, str) and value for value in entry.values())
+        ):
+            raise RuleError(
+                f"{source}: [critical] each entry of interfaces must name a host and an "
+                "interface, such as { host = \"R1\", interface = \"GigabitEthernet0/1\" }"
+            )
+    return devices, interfaces
+
+
+# Names the user's rule file in place of `[rules] user_file`; the tests point it at a file
+# that does not exist, so a developer's own rules never change what the tests find.
+USER_FILE_ENV = "NETLOG_USER_RULES"
+
+
+def user_rules_path(config: dict | None = None, path: str | Path | None = None) -> Path | None:
+    """The user's rule file: the one given, else NETLOG_RULES, else NETLOG_USER_RULES,
+    else `[rules] user_file` in the settings."""
+    if path:
+        return Path(path)
+    if os.environ.get("NETLOG_RULES"):
+        return Path(os.environ["NETLOG_RULES"])
+    if USER_FILE_ENV in os.environ:
+        return Path(os.environ[USER_FILE_ENV]) if os.environ[USER_FILE_ENV] else None
+    configured = (config or {}).get("rules", {}).get("user_file")
+    return Path(configured) if configured else None
+
+
+def _read_user_file(result: RuleSet, rules: dict[str, Rule], known_keys: set[str]) -> None:
+    user = result.user_file
+    source = str(user)
+    try:
+        text = user.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise RuleError(f"rule file not found: {user}") from None
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        raise RuleError(f"{source} is not valid TOML: {error}") from None
+    for key in data:
+        if key not in USER_FILE_SECTIONS:
+            raise RuleError(
+                f"{source}: {key!r} is not a known section "
+                "(known: [[rule]], [[override]], [critical])"
+            )
+    for rule in parse_rules(text, source):
+        result.origin[rule.name] = "your file"
+        for key in event_keys_of(rule):
+            if key not in known_keys:
+                result.warnings.append(
+                    f"rule {rule.name!r}: event key {key!r} is not a message type netlog "
+                    "knows; check the spelling (it is fine if your devices send it)"
+                )
+        rules[rule.name] = rule
+    tables = data.get("override", [])
+    if not isinstance(tables, list) or not all(isinstance(table, dict) for table in tables):
+        raise RuleError(f"{source}: overrides must be written as [[override]] tables")
+    for table in tables:
+        name = table.get("name")
+        if not isinstance(name, str) or not name:
+            raise RuleError(f'{source}: an [[override]] has no name; it needs name = "..."')
+        if name in result.overrides:
+            raise RuleError(f"{source}: rule {name!r} is overridden twice")
+        if name not in rules:
+            raise RuleError(f"{source}: [[override]] names rule {name!r}, which does not exist")
+        rules[name] = apply_override(rules[name], table)
+        result.overrides[name] = {key: value for key, value in table.items() if key != "name"}
+        if result.origin[name] == "built-in":
+            result.origin[name] = "built-in, changed"
+    if "critical" in data:
+        result.critical_devices, result.critical_interfaces = _critical(data["critical"], source)
+
+
+def load_rule_set(path: str | Path | None = None, config: dict | None = None) -> RuleSet:
+    """The built-in rules with a user file applied.
+
+    The user file is `path`, or the file named by NETLOG_RULES, or `[rules] user_file` in
+    the settings when that file exists. A [[rule]] with the name of a built-in rule
+    replaces it completely; an [[override]] changes some of its settings. Any mistake
+    raises a RuleError naming the rule, the setting and the problem: a rule is never
+    ignored without a word.
     """
     built_in = resources.files("netlog.config").joinpath("rules.toml").read_text(encoding="utf-8")
     rules = {rule.name: rule for rule in parse_rules(built_in, "the built-in rules")}
+    result = RuleSet(rules=[], origin=dict.fromkeys(rules, "built-in"))
+    known_keys = _known_event_keys() | {
+        key for rule in rules.values() for key in event_keys_of(rule)
+    }
+    explicit = path or os.environ.get("NETLOG_RULES")
+    user = user_rules_path(config, path)
+    if user is not None and (explicit or user.is_file()):
+        result.user_file = user
+        _read_user_file(result, rules, known_keys)
+    result.rules = list(rules.values())
+    return result
 
-    path = path or os.environ.get("NETLOG_RULES")
-    if path:
-        try:
-            text = Path(path).read_text(encoding="utf-8")
-        except FileNotFoundError:
-            raise RuleError(f"rule file not found: {path}") from None
-        rules.update({rule.name: rule for rule in parse_rules(text, str(path))})
-    return list(rules.values())
+
+def load_rules(path: str | Path | None = None) -> list[Rule]:
+    """The built-in rules, with a user file's rules replacing or adding to them and its
+    overrides applied. The user file is `path`, or the file named by NETLOG_RULES."""
+    return load_rule_set(path).rules
+
+
+# --- Changing the user file from the API -------------------------------------------------------
+
+
+def _toml_value(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float):
+        return repr(value)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)  # a TOML basic string
+    raise TypeError(f"cannot write {value!r} to a rule file")
+
+
+def _override_name(block: list[str]) -> str | None:
+    try:
+        tables = tomllib.loads("\n".join(block)).get("override", [])
+    except tomllib.TOMLDecodeError:
+        return None
+    return tables[0].get("name") if tables else None
+
+
+def with_override(text: str, name: str, settings: dict) -> str:
+    """The text of a user rule file with the [[override]] of one rule replaced by
+    `settings`, or removed when `settings` is empty. Everything else in the file, comments
+    included, is kept as it is."""
+    lines = text.splitlines()
+    kept: list[str] = []
+    i = 0
+    while i < len(lines):
+        if lines[i].strip() == "[[override]]":
+            end = i + 1
+            while end < len(lines) and not lines[end].startswith("["):
+                end += 1
+            # Comments and blank lines after the last setting introduce what follows.
+            last = end - 1
+            while last > i and (not lines[last].strip() or lines[last].lstrip().startswith("#")):
+                last -= 1
+            block = lines[i : last + 1]
+            if _override_name(block) != name:
+                kept += block
+            kept += lines[last + 1 : end]
+            i = end
+            continue
+        kept.append(lines[i])
+        i += 1
+    while kept and not kept[-1].strip():
+        kept.pop()
+    if settings:
+        if kept:
+            kept.append("")
+        kept += ["[[override]]", f"name = {_toml_value(name)}"]
+        kept += [f"{key} = {_toml_value(value)}" for key, value in settings.items()]
+    return "\n".join(kept) + "\n" if kept else ""
