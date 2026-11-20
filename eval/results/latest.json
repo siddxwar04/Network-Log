@@ -1,0 +1,418 @@
+{
+  "generated_at": "2026-11-20T21:23:48+00:00",
+  "limits": "These are synthetic logs from this project's own generator, so the numbers show the tool is consistent with its design, not that it works on every real network.",
+  "matching_rule": "A found incident matches an expected one when it is of the same type (its likely cause, or one of its findings, is of that kind), its likely cause is on the same device, and their time spans overlap (within 10 seconds). Each expected incident matches at most one found incident. An unexpected incident counts as a false alarm at Medium or above.",
+  "topology": false,
+  "machine": "Windows AMD64, Python 3.12.5",
+  "sets": {
+    "tuned": {
+      "files": 10,
+      "lines": 94918,
+      "overall": {
+        "expected": 9,
+        "found": 9,
+        "false_alarms": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "by_type": {
+        "bgp_session_down": {
+          "expected": 1,
+          "found": 1,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "brute_force": {
+          "expected": 3,
+          "found": 3,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "device_reload": {
+          "expected": 1,
+          "found": 1,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "dhcp_exhaustion": {
+          "expected": 1,
+          "found": 1,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "link_failure": {
+          "expected": 1,
+          "found": 1,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "link_flap": {
+          "expected": 2,
+          "found": 2,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "root_cause": {
+        "correct": 9,
+        "of": 9,
+        "rate": 1.0
+      },
+      "severity": {
+        "correct": 9,
+        "of": 9,
+        "rate": 1.0
+      },
+      "devices": {
+        "correct": 8,
+        "of": 9,
+        "rate": 0.8888888888888888
+      },
+      "correlation": {
+        "split": 0,
+        "merged": 0,
+        "expected": 9
+      },
+      "false_alarms_per_10k_lines": 0.0,
+      "lines_per_second": 5489.335786347205
+    },
+    "heldout": {
+      "files": 160,
+      "lines": 894486,
+      "overall": {
+        "expected": 167,
+        "found": 167,
+        "false_alarms": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "by_type": {
+        "bgp_session_down": {
+          "expected": 20,
+          "found": 20,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "brute_force": {
+          "expected": 55,
+          "found": 55,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "device_reload": {
+          "expected": 20,
+          "found": 20,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "dhcp_exhaustion": {
+          "expected": 16,
+          "found": 16,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "link_failure": {
+          "expected": 20,
+          "found": 20,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "link_flap": {
+          "expected": 36,
+          "found": 36,
+          "false_alarms": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "root_cause": {
+        "correct": 167,
+        "of": 167,
+        "rate": 1.0
+      },
+      "severity": {
+        "correct": 167,
+        "of": 167,
+        "rate": 1.0
+      },
+      "devices": {
+        "correct": 147,
+        "of": 167,
+        "rate": 0.8802395209580839
+      },
+      "correlation": {
+        "split": 0,
+        "merged": 0,
+        "expected": 167
+      },
+      "false_alarms_per_10k_lines": 0.0,
+      "lines_per_second": 5365.016766917292
+    },
+    "noise": {
+      "files": 10,
+      "lines": 143014,
+      "overall": {
+        "expected": 0,
+        "found": 0,
+        "false_alarms": 0,
+        "precision": null,
+        "recall": null,
+        "f1": null
+      },
+      "by_type": {},
+      "root_cause": {
+        "correct": 0,
+        "of": 0,
+        "rate": null
+      },
+      "severity": {
+        "correct": 0,
+        "of": 0,
+        "rate": null
+      },
+      "devices": {
+        "correct": 0,
+        "of": 0,
+        "rate": null
+      },
+      "correlation": {
+        "split": 0,
+        "merged": 0,
+        "expected": 0
+      },
+      "false_alarms_per_10k_lines": 0.0,
+      "lines_per_second": 5339.986190314042
+    }
+  },
+  "efficiency": {
+    "compression_ratio": 317.4515050167224,
+    "lines": 94918,
+    "templates": 299,
+    "evidence_pack_tokens": {
+      "incidents": 9,
+      "median": 849,
+      "largest": 2931,
+      "limit": 3000
+    }
+  },
+  "explanations": {
+    "measured": false,
+    "why": "needs a real LLM provider and costs requests; ask first"
+  },
+  "problems": [
+    {
+      "set": "tuned",
+      "file": "07_device_reload",
+      "scenario": "07_device_reload",
+      "seed": null,
+      "variant": "",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1001",
+      "scenario": "device_reload",
+      "seed": 1001,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1002",
+      "scenario": "device_reload",
+      "seed": 1002,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1003",
+      "scenario": "device_reload",
+      "seed": 1003,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1004",
+      "scenario": "device_reload",
+      "seed": 1004,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1005",
+      "scenario": "device_reload",
+      "seed": 1005,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1006",
+      "scenario": "device_reload",
+      "seed": 1006,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1007",
+      "scenario": "device_reload",
+      "seed": 1007,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1008",
+      "scenario": "device_reload",
+      "seed": 1008,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1009",
+      "scenario": "device_reload",
+      "seed": 1009,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1010",
+      "scenario": "device_reload",
+      "seed": 1010,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1011",
+      "scenario": "device_reload",
+      "seed": 1011,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1012",
+      "scenario": "device_reload",
+      "seed": 1012,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1013",
+      "scenario": "device_reload",
+      "seed": 1013,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1014",
+      "scenario": "device_reload",
+      "seed": 1014,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1015",
+      "scenario": "device_reload",
+      "seed": 1015,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1016",
+      "scenario": "device_reload",
+      "seed": 1016,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1017",
+      "scenario": "device_reload",
+      "seed": 1017,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1018",
+      "scenario": "device_reload",
+      "seed": 1018,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1019",
+      "scenario": "device_reload",
+      "seed": 1019,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    },
+    {
+      "set": "heldout",
+      "file": "device_reload-1020",
+      "scenario": "device_reload",
+      "seed": 1020,
+      "variant": "another seed",
+      "kind": "wrong devices",
+      "reason": "device_reload: expected R3, SW1, found SW1"
+    }
+  ]
+}
