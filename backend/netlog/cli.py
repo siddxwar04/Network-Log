@@ -1,4 +1,11 @@
-"""The command line: `netlog analyze <file>`.
+"""The command line.
+
+    netlog analyze <file>             analyze a log file and print a report
+    netlog postmortem <file>          draft the post-mortem of one incident in a log file
+    netlog demo-explanations --yes    have the LLM explain the demo scenarios once, and
+                                      store the answers with them
+    netlog rules test <rules> <log>   try a rule file on a log file before relying on it
+    netlog replay <file>              send a log file to the live listener, as if now
 
 Exit codes, so the tool can be used in scripts:
     0   nothing found at or above the minimum severity
@@ -21,10 +28,12 @@ from netlog.config import load_config
 from netlog.correlation.grouping import correlate
 from netlog.correlation.priors import load_priors
 from netlog.correlation.topology import load_topology
+from netlog.demo import demo_explanations
 from netlog.detection.engine import detect
-from netlog.detection.rules import LEVELS, load_rules
+from netlog.detection.rules import LEVELS, load_rule_set
 from netlog.ingestion.ingest import ingest_file
 from netlog.ingestion.reader import BinaryFileError
+from netlog.live.replay import replay, sender
 from netlog.llm.explanation import MODES
 from netlog.llm.provider import Provider
 from netlog.llm.settings import llm_settings, load_env_file
@@ -32,7 +41,9 @@ from netlog.mining.templates import mine_templates
 from netlog.parsers.syslog import parse_timezone
 from netlog.report.build import Report, build_report, to_json
 from netlog.report.explain import explain_incidents
+from netlog.report.postmortem import postmortem_markdown
 from netlog.report.render import render_markdown, render_text
+from netlog.rules_cli import rules_test
 from netlog.storage.database import Database, default_db_path
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_ERROR = 0, 1, 2
@@ -50,8 +61,39 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"netlog {__version__}")
     commands = parser.add_subparsers(dest="command", required=True, metavar="command")
 
+    # What both analyze and postmortem need to read a file the same way.
+    shared = argparse.ArgumentParser(add_help=False)
+    shared.add_argument(
+        "--year", type=int, help="year of the first log line (default: the current year)"
+    )
+    shared.add_argument(
+        "--timezone",
+        help="timezone of the devices' clocks: UTC, or an offset such as +05:30 (default: UTC)",
+    )
+    shared.add_argument(
+        "--topology",
+        type=Path,
+        help="a file saying which address is which device and which interfaces are connected",
+    )
+    shared.add_argument(
+        "--audience",
+        choices=MODES,
+        default="senior",
+        help="who the explanation is written for: junior explains terms and reasoning, "
+        "senior is terse (default: senior)",
+    )
+    shared.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="never ask an LLM; explain every incident with the built-in templates",
+    )
+    shared.add_argument("--rules", type=Path, help="a rule file that adds to the built-in rules")
+    shared.add_argument("--config", type=Path, help="a settings file that overrides the defaults")
+    shared.add_argument("--quiet", "-q", action="store_true", help="do not show progress")
+
     analyze = commands.add_parser(
         "analyze",
+        parents=[shared],
         help="analyze a log file and print a report",
         description="Analyze a log file and print a report of what was found.",
         epilog="Exit code: 0 nothing found, 1 something found, 2 the file could not be analyzed.",
@@ -71,41 +113,87 @@ def _parser() -> argparse.ArgumentParser:
         help="lowest severity to report (default: low, which hides routine info findings)",
     )
     analyze.add_argument(
-        "--year", type=int, help="year of the first log line (default: the current year)"
-    )
-    analyze.add_argument(
-        "--timezone",
-        help="timezone of the devices' clocks: UTC, or an offset such as +05:30 (default: UTC)",
-    )
-    analyze.add_argument(
-        "--topology",
-        type=Path,
-        help="a file saying which address is which device and which interfaces are connected",
-    )
-    analyze.add_argument(
         "--findings",
         action="store_true",
         help="also list the individual findings inside each incident",
     )
     analyze.add_argument(
-        "--audience",
-        choices=MODES,
-        default="senior",
-        help="who the explanation is written for: junior explains terms and reasoning, "
-        "senior is terse (default: senior)",
-    )
-    analyze.add_argument(
-        "--no-llm",
-        action="store_true",
-        help="never ask an LLM; explain every incident with the built-in templates",
-    )
-    analyze.add_argument(
         "--usage", action="store_true", help="show how many LLM tokens the report cost"
     )
-    analyze.add_argument("--rules", type=Path, help="a rule file that adds to the built-in rules")
-    analyze.add_argument("--config", type=Path, help="a settings file that overrides the defaults")
     analyze.add_argument("--no-color", action="store_true", help="never use color")
-    analyze.add_argument("--quiet", "-q", action="store_true", help="do not show progress")
+
+    postmortem = commands.add_parser(
+        "postmortem",
+        parents=[shared],
+        help="draft the post-mortem of one incident, in Markdown",
+        description="Analyze a log file and draft the post-mortem of one of its incidents, "
+        "in Markdown, for a team to review and file.",
+        epilog="Exit code: 0 written, 2 the file could not be analyzed or has no such incident.",
+    )
+    postmortem.add_argument("file", type=Path, help="the log file to analyze")
+    postmortem.add_argument(
+        "--incident",
+        help="the id of the incident, as the report shows it (default: the most severe)",
+    )
+    postmortem.add_argument("--output", "-o", type=Path, help="write it to this file")
+
+    demo = commands.add_parser(
+        "demo-explanations",
+        help="have the LLM explain the demo scenarios once and store the answers",
+        description="Run every built-in demo scenario, ask the configured LLM to explain "
+        "each incident for both audiences, and store the answers that pass every check in "
+        "the file named by [demo] explanations. The demo then works with no API key. This "
+        "costs one or two requests per incident and audience.",
+    )
+    demo.add_argument(
+        "--yes", action="store_true", help="go ahead; without it, only say what would be done"
+    )
+    demo.add_argument("--output", "-o", type=Path, help="write to this file instead")
+    demo.add_argument("--config", type=Path, help="a settings file that overrides the defaults")
+
+    rules = commands.add_parser(
+        "rules", help="work with rule files", description="Work with detection rule files."
+    )
+    rules_commands = rules.add_subparsers(dest="rules_command", required=True, metavar="command")
+    trial = rules_commands.add_parser(
+        "test",
+        help="run a rule file over a log file and show what it would find",
+        description="Run the built-in rules, changed and added to by a rule file, over one "
+        "log file, and show how many times each rule triggered and what it found. Nothing "
+        "is stored. A rule file with a mistake is refused with a message saying what is "
+        "wrong.",
+        epilog="Exit code: 0 nothing triggered, 1 something did, 2 the rule file or the log "
+        "could not be used.",
+    )
+    trial.add_argument("rule_file", type=Path, help="the rule file to try")
+    trial.add_argument("log_file", type=Path, help="the log file to try it on")
+    trial.add_argument(
+        "--year", type=int, help="year of the first log line (default: the current year)"
+    )
+    trial.add_argument("--timezone", help="timezone of the devices' clocks (default: UTC)")
+    trial.add_argument("--config", type=Path, help="a settings file that overrides the defaults")
+
+    replay = commands.add_parser(
+        "replay",
+        help="send a log file to the live listener, with its times moved to now",
+        description="Send the lines of a log file to the live syslog listener, with every "
+        "timestamp moved so the first line happens now, at real speed or faster. For "
+        "testing and demos.",
+    )
+    replay.add_argument("file", type=Path, help="the log file to send")
+    replay.add_argument(
+        "--host", default="127.0.0.1", help="the listener's address (default: 127.0.0.1)"
+    )
+    replay.add_argument(
+        "--port", type=int, default=5514, help="the listener's port (default: 5514)"
+    )
+    replay.add_argument("--tcp", action="store_true", help="send over TCP instead of UDP")
+    replay.add_argument(
+        "--speed", type=float, default=1.0,
+        help="how many times faster than it happened: 60 sends an hour in a minute (default: 1)",
+    )  # fmt: skip
+    replay.add_argument("--start", metavar="HH:MM", help="skip lines before this time of day")
+    replay.add_argument("--end", metavar="HH:MM", help="stop after this time of day")
     return parser
 
 
@@ -140,9 +228,10 @@ class _Progress:
 
 def analyze(
     args: argparse.Namespace, progress: _Progress, provider: Provider | None = None
-) -> Report:
+) -> tuple[Report, str | None]:
     """Run the whole pipeline on the file. `provider` replaces the configured LLM
-    provider, which is how tests supply a fake."""
+    provider, which is how tests supply a fake. For `postmortem`, the post-mortem of the
+    chosen incident comes back as well."""
     path: Path = args.file
     if not path.exists():
         raise UsageError(f"file not found: {path}")
@@ -156,12 +245,16 @@ def analyze(
     try:
         tz = parse_timezone(args.timezone) if args.timezone else UTC
         config = load_config(args.config)
-        rules = load_rules(args.rules)
+        ruleset = load_rule_set(args.rules, config)
         hints = load_topology(args.topology) if args.topology else None
         priors = load_priors()
         settings = llm_settings(config)
     except ValueError as error:  # includes RuleError, TopologyError and PriorError
         raise UsageError(str(error)) from None
+
+    for warning in ruleset.warnings:
+        progress.clear()
+        print(f"netlog: warning: {warning}", file=sys.stderr)
 
     assumed_year = datetime.now(UTC).year
     with tempfile.TemporaryDirectory(prefix="netlog-") as workdir:
@@ -191,17 +284,21 @@ def analyze(
             progress.show(f"Finding message patterns in {upload.line_count:,} lines")
             mine_templates(db, upload_id, config)
             progress.show("Running detection rules")
-            detect(db, upload_id, rules, config)
+            detect(db, upload_id, ruleset.rules, ruleset.severity_settings(config))
             progress.show("Grouping findings into incidents")
             correlate(db, upload_id, config, hints, priors)
 
             # Everything above is decided. The explanation only puts it into words.
-            floor = LEVELS.index(args.min_severity)
+            postmortem = args.command == "postmortem"
+            min_severity = "info" if postmortem else args.min_severity
+            floor = LEVELS.index(min_severity)
             listed = [
                 incident.id
                 for incident in db.incidents(upload_id)
                 if LEVELS.index(incident.severity) >= floor
             ]
+            if postmortem:
+                listed = [_chosen_incident(db, upload_id, path, args.incident)]
             use_llm = not args.no_llm
             asks = use_llm and (provider is not None or settings.configured)
             # Stored answers live in the local database. It is only opened when an LLM
@@ -227,17 +324,75 @@ def analyze(
             finally:
                 if cache is not db:
                     cache.close()
-            return build_report(
+            report = build_report(
                 db,
                 upload_id,
-                min_severity=args.min_severity,
+                min_severity=min_severity,
                 year=args.year,
                 assumed_year=assumed_year,
                 timezone=args.timezone,
-                show_findings=args.findings,
-                show_usage=args.usage,
+                show_findings=getattr(args, "findings", False),
+                show_usage=getattr(args, "usage", False),
                 explanations=explanations,
             )
+            if not postmortem:
+                return report, None
+            (chosen,) = listed
+            text = postmortem_markdown(db, upload, report, chosen, explanations[chosen])
+            return report, text + "\n"
+
+
+def replay_file(args: argparse.Namespace) -> int:
+    """The `netlog replay` command."""
+    if not args.file.is_file():
+        print(f"netlog: file not found: {args.file}", file=sys.stderr)
+        return EXIT_ERROR
+    if args.speed <= 0:
+        print("netlog: --speed must be greater than zero", file=sys.stderr)
+        return EXIT_ERROR
+    lines = args.file.read_text(encoding="utf-8", errors="replace").splitlines()
+    # The time of day of a line is at the same place in a syslog header: "Mar  3 02:46:12".
+    if args.start:
+        lines = [line for line in lines if line[7:12] >= args.start]
+    if args.end:
+        lines = [line for line in lines if line[7:12] <= args.end]
+    try:
+        send, close = sender(args.host, args.port, args.tcp)
+    except OSError as error:
+        print(f"netlog: cannot reach {args.host}:{args.port}: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    how = "TCP" if args.tcp else "UDP"
+    print(
+        f"Sending {len(lines):,} lines to {args.host}:{args.port} over {how} at {args.speed:g}x..."
+    )
+    try:
+        sent = replay(lines, send, speed=args.speed)
+    except OSError as error:
+        print(f"netlog: sending failed: {error}", file=sys.stderr)
+        return EXIT_ERROR
+    except KeyboardInterrupt:
+        print("netlog: stopped", file=sys.stderr)
+        return EXIT_ERROR
+    finally:
+        close()
+    print(f"Sent {sent:,} lines.")
+    return EXIT_CLEAN
+
+
+def _chosen_incident(db: Database, upload_id: int, path: Path, wanted: str | None) -> str:
+    """The incident a post-mortem is for: the one asked for, or else the most severe."""
+    incidents = sorted(
+        db.incidents(upload_id),
+        key=lambda incident: (-LEVELS.index(incident.severity), incident.start, incident.id),
+    )
+    if not incidents:
+        raise UsageError(f"no incidents found in {path}, so there is no post-mortem to write")
+    if wanted is None:
+        return incidents[0].id
+    if wanted not in {incident.id for incident in incidents}:
+        known = ", ".join(incident.id for incident in incidents[:10])
+        raise UsageError(f"{path} has no incident {wanted!r}; it has: {known}")
+    return wanted
 
 
 def _render(report: Report, args: argparse.Namespace) -> str:
@@ -257,16 +412,26 @@ def main(argv: list[str] | None = None, provider: Provider | None = None) -> int
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
 
+    if args.command == "demo-explanations":
+        return demo_explanations(args, provider)
+    if args.command == "rules":
+        return rules_test(args)
+    if args.command == "replay":
+        return replay_file(args)
+
     progress = _Progress(enabled=not args.quiet and sys.stderr.isatty())
     try:
-        report = analyze(args, progress, provider)
-        text = _render(report, args)
+        report, document = analyze(args, progress, provider)
+        text = document if document is not None else _render(report, args)
         progress.clear()
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(text, encoding="utf-8", newline="\n")
-            summary = f"{len(report.incidents)} incident(s) at {args.min_severity} or above"
-            print(f"Report written to {args.output} ({summary}).")
+            if document is not None:
+                print(f"Post-mortem written to {args.output}. Review it before filing it.")
+            else:
+                summary = f"{len(report.incidents)} incident(s) at {args.min_severity} or above"
+                print(f"Report written to {args.output} ({summary}).")
         else:
             sys.stdout.write(text)
     except UsageError as error:
@@ -282,6 +447,8 @@ def main(argv: list[str] | None = None, provider: Provider | None = None) -> int
         progress.clear()
         print("netlog: stopped", file=sys.stderr)
         return EXIT_ERROR
+    if document is not None:
+        return EXIT_CLEAN
     return EXIT_FINDINGS if report.has_something else EXIT_CLEAN
 
 

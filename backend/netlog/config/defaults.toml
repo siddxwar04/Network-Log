@@ -259,6 +259,64 @@ change_verbs = [
     "update", "upgrade",
 ]
 
+[rules]
+# Your own rule file: overrides of the built-in rules, rules of your own, and your critical
+# devices and interfaces. Used when it exists; the web API writes changes to it. See
+# docs/WRITING_RULES.md for the format.
+user_file = "data/rules.toml"
+
+[demo]
+# Explanations of the built-in scenarios, written once by a real LLM and kept with them,
+# so the demo works with no API key and costs nothing. Rebuild them, which costs one
+# request per incident and audience, with:  netlog demo-explanations
+explanations = "data/scenarios/explanations.json"
+
+[live]
+# The live syslog listener: devices send their messages straight to netlog. It runs inside
+# the web API when enabled here, or when the NETLOG_LIVE environment variable is 1.
+enabled = false
+# Plain syslog has no authentication: anyone who can reach this address can send messages
+# that look like they come from your routers. 127.0.0.1 accepts messages from this computer
+# only. To receive from devices, set the address of the network card they can reach (for
+# example "192.168.1.20"), not "0.0.0.0", and list the devices in allowed_senders.
+bind = "127.0.0.1"
+# Port 514 is the standard one, but needs administrator rights; devices can be told to
+# send to another port. 5514 needs none.
+port = 5514
+udp = true
+tcp = true
+# Only these sender addresses are accepted. Empty: any address that can reach the port.
+allowed_senders = []
+# A longer message is counted and dropped.
+max_message_bytes = 8192
+# Messages waiting to be stored. A burst beyond this drops the oldest, and says so.
+queue_size = 10000
+# How many messages a second one sender may send on average, and in a burst, before the
+# rest of its messages are dropped. One misbehaving device cannot starve the others.
+rate_per_sender = 200
+burst_per_sender = 400
+# At most this many senders are remembered for the live page, and this many TCP
+# connections are served at once.
+max_senders_tracked = 1000
+max_tcp_clients = 100
+# The timezone of the devices' clocks, for messages that do not say.
+timezone = "UTC"
+# A device time further than this from the arrival time is not believed: the message is
+# placed at its arrival time and keeps the device time for reference.
+max_clock_skew_seconds = 3600
+# Detection runs this often, over the messages of the last lookback_seconds.
+detect_every_seconds = 5
+lookback_seconds = 7200
+# An incident closes when it has not changed for this long.
+quiet_seconds = 300
+# An incident is explained once it has not changed for this long, and once more at most
+# when it closes, so an LLM is asked a few times per incident, not on every message.
+explain_after_seconds = 30
+# Messages are kept this many days; the evidence of incidents, and the incidents, longer.
+retention_events_days = 7
+retention_incidents_days = 90
+prune_every_seconds = 3600
+
 [api]
 # The web API. Start it with:  python -m uvicorn netlog.api.app:app
 #
@@ -280,6 +338,8 @@ timeline_max_events = 2000
 # About how many bars the events-over-time chart of an upload has. The API picks a round
 # bucket length that gives at most this many.
 histogram_buckets = 120
+# The most lines of context a request may ask for on each side of one log line.
+max_context_lines = 10
 # How many pipelines run at the same time. More than one gains little: SQLite lets one
 # writer in at a time.
 workers = 1

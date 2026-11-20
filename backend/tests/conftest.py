@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,18 @@ from netlog.mining.templates import mine_templates
 from netlog.storage.database import Database
 
 SCENARIOS = Path("data/scenarios")
+
+
+def pytest_configure(config):
+    """Before any fixture runs, even the module-wide ones: the explanations kept with the
+    demo scenarios must never answer in place of a test's fake LLM."""
+    os.environ["NETLOG_DEMO_EXPLANATIONS"] = str(
+        Path(tempfile.gettempdir()) / "netlog-tests-no-stored-explanations.json"
+    )
+    # Nor may a developer's own rule file change what the tests find.
+    os.environ["NETLOG_USER_RULES"] = str(
+        Path(tempfile.gettempdir()) / "netlog-tests-no-rules.toml"
+    )
 
 
 @pytest.fixture(autouse=True)

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from netlog.correlation.grouping import correlate
 from netlog.detection.engine import detect
+from netlog.detection.rules import load_rule_set
 from netlog.ingestion.ingest import ingest_file
 from netlog.ingestion.reader import BinaryFileError
 from netlog.llm.provider import Provider
@@ -89,7 +90,10 @@ def run_pipeline(job: Job) -> None:
             enter("templates")
             mine_templates(db, job.upload_id, job.config)
             enter("detection")
-            detect(db, job.upload_id, config=job.config)
+            # The rules as they are now, with the user's file: a change made through the
+            # API applies from the next analysis on.
+            ruleset = load_rule_set(config=job.config)
+            detect(db, job.upload_id, ruleset.rules, ruleset.severity_settings(job.config))
             enter("correlation")
             incidents = correlate(db, job.upload_id, job.config)
 
