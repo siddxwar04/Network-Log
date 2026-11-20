@@ -263,6 +263,39 @@ _MIGRATIONS = (
     );
     CREATE INDEX live_incidents_by_upload ON live_incidents (upload_id, opened_at);
     """,
+    # Version 11: alerts. Each live incident remembers the one-line summary of its latest
+    # explanation, for its alerts. Every alert decided on is recorded, sent or not: what it
+    # said, whether it went out, was held back by the rate limit or was silenced, and what
+    # happened when each webhook was called. Silences are periods during which a device,
+    # an incident type or everything raises no alert.
+    """
+    ALTER TABLE live_incidents ADD COLUMN summary TEXT;
+
+    CREATE TABLE alerts (
+        id          INTEGER PRIMARY KEY,
+        incident_id TEXT,
+        kind        TEXT NOT NULL,
+        severity    TEXT,
+        status      TEXT NOT NULL,
+        created_at  INTEGER NOT NULL,
+        sent_at     INTEGER,
+        message     TEXT NOT NULL,
+        deliveries  TEXT NOT NULL DEFAULT '[]',
+        digest_id   INTEGER,
+        silence_id  INTEGER
+    );
+    CREATE INDEX alerts_by_incident ON alerts (incident_id);
+    CREATE INDEX alerts_by_time ON alerts (created_at);
+
+    CREATE TABLE silences (
+        id         INTEGER PRIMARY KEY,
+        scope      TEXT NOT NULL,
+        value      TEXT,
+        starts_at  INTEGER NOT NULL,
+        ends_at    INTEGER NOT NULL,
+        reason     TEXT NOT NULL DEFAULT ''
+    );
+    """,
 )
 SCHEMA_VERSION = len(_MIGRATIONS)
 
@@ -1183,18 +1216,141 @@ class Database:
             self._db.execute("DELETE FROM live_incidents WHERE upload_id = ?", (upload_id,))
             self._db.executemany(
                 "INSERT INTO live_incidents (id, upload_id, state, opened_at, changed_at, "
-                "closed_at, snapshot, explained_hash, explanations) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "closed_at, snapshot, explained_hash, explanations, summary) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     (
                         item["id"], upload_id, item["state"], _to_micros(item["opened_at"]),
                         _to_micros(item["changed_at"]), _to_micros(item["closed_at"]),
                         json.dumps(item["snapshot"], ensure_ascii=False),
                         item.get("explained_hash"), item.get("explanations", 0),
+                        item.get("summary"),
                     )
                     for item in items
                 ),
             )  # fmt: skip
+
+    # --- Alerts ---------------------------------------------------------------------------
+
+    @staticmethod
+    def _alert(row: sqlite3.Row) -> dict:
+        return {
+            **dict(row),
+            "created_at": _from_micros(row["created_at"]),
+            "sent_at": _from_micros(row["sent_at"]),
+            "message": json.loads(row["message"]),
+            "deliveries": json.loads(row["deliveries"]),
+        }
+
+    def add_alert(
+        self,
+        kind: str,
+        status: str,
+        created_at: datetime,
+        message: dict,
+        *,
+        incident_id: str | None = None,
+        severity: str | None = None,
+        silence_id: int | None = None,
+    ) -> int:
+        """Record an alert that was decided on. Returns its id."""
+        with self._db:
+            cursor = self._db.execute(
+                "INSERT INTO alerts (incident_id, kind, severity, status, created_at, message, "
+                "silence_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (incident_id, kind, severity, status, _to_micros(created_at),
+                 json.dumps(message, ensure_ascii=False), silence_id),
+            )  # fmt: skip
+        return cursor.lastrowid
+
+    def finish_alert(
+        self, alert_id: int, status: str, deliveries: list[dict], sent_at: datetime | None
+    ) -> None:
+        """Record how sending an alert went."""
+        with self._db:
+            self._db.execute(
+                "UPDATE alerts SET status = ?, deliveries = ?, sent_at = ? WHERE id = ?",
+                (status, json.dumps(deliveries, ensure_ascii=False), _to_micros(sent_at),
+                 alert_id),
+            )  # fmt: skip
+
+    def mark_digested(self, alert_ids: Iterable[int], digest_id: int) -> None:
+        """Held alerts that have gone out inside a digest."""
+        with self._db:
+            self._db.executemany(
+                "UPDATE alerts SET status = 'digested', digest_id = ? WHERE id = ?",
+                ((digest_id, alert_id) for alert_id in alert_ids),
+            )
+
+    def get_alert(self, alert_id: int) -> dict | None:
+        row = self._db.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,)).fetchone()
+        return self._alert(row) if row else None
+
+    def alerts(
+        self,
+        *,
+        statuses: Iterable[str] | None = None,
+        incident_ids: Iterable[str] | None = None,
+        since: datetime | None = None,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """Recorded alerts, newest first."""
+        clauses, params = [], []
+        if statuses is not None:
+            wanted = list(statuses)
+            clauses.append(f"status IN ({', '.join('?' * len(wanted))})")
+            params += wanted
+        if incident_ids is not None:
+            ids = list(incident_ids)
+            if not ids:
+                return []
+            clauses.append(f"incident_id IN ({', '.join('?' * len(ids))})")
+            params += ids
+        if since is not None:
+            clauses.append("created_at >= ?")
+            params.append(_to_micros(since))
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"SELECT * FROM alerts{where} ORDER BY created_at DESC, id DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(int(limit))
+        return [self._alert(row) for row in self._db.execute(sql, params)]
+
+    def add_silence(
+        self, scope: str, value: str | None, starts_at: datetime, ends_at: datetime, reason: str
+    ) -> int:
+        with self._db:
+            cursor = self._db.execute(
+                "INSERT INTO silences (scope, value, starts_at, ends_at, reason) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (scope, value, _to_micros(starts_at), _to_micros(ends_at), reason),
+            )
+        return cursor.lastrowid
+
+    def silences(self, active_at: datetime | None = None) -> list[dict]:
+        """Silences, newest first; only those in force at `active_at` when it is given."""
+        sql, params = "SELECT * FROM silences", []
+        if active_at is not None:
+            sql += " WHERE starts_at <= ? AND ends_at > ?"
+            params = [_to_micros(active_at)] * 2
+        rows = self._db.execute(sql + " ORDER BY starts_at DESC, id DESC", params)
+        return [
+            {
+                **dict(row),
+                "starts_at": _from_micros(row["starts_at"]),
+                "ends_at": _from_micros(row["ends_at"]),
+            }
+            for row in rows
+        ]
+
+    def end_silence(self, silence_id: int, at: datetime) -> bool:
+        """End a silence early. Returns False if there is no such silence."""
+        with self._db:
+            cursor = self._db.execute(
+                "UPDATE silences SET ends_at = MIN(ends_at, ?) WHERE id = ?",
+                (_to_micros(at), silence_id),
+            )
+        return cursor.rowcount > 0
 
     def events_by_id(self, event_ids: Iterable[int]) -> list[Event]:
         """The events with the given ids, in time order."""

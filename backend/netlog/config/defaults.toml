@@ -317,6 +317,47 @@ retention_events_days = 7
 retention_incidents_days = 90
 prune_every_seconds = 3600
 
+[alerts]
+# A chat message when the live listener finds something serious. Alerts are sent only when
+# a webhook address is set, and the addresses are never written here: anyone who has one
+# can post to your channel. Put them in .env (ignored by git) or the environment:
+#   NETLOG_ALERT_SLACK_URL    a Slack incoming webhook, or anything that takes Slack's
+#                             format (Mattermost, Rocket.Chat, Discord's /slack address)
+#   NETLOG_ALERT_WEBHOOK_URL  any other service: the alert is posted as plain JSON
+#
+# An incident raises an alert when it opens at this severity or above, and one more each
+# time its severity rises to a level it has not been alerted at. Never twice for the same
+# incident at the same severity.
+min_severity = "high"
+# A new incident often grows in its first seconds: an interface goes down, then OSPF drops,
+# then BGP. Its first alert waits this long after it opens, so it goes out once, with the
+# severity and likely cause the incident settles on, not once per step. 0 sends at once.
+# Later alerts about the same incident (its severity rose) are never held up.
+first_alert_wait_seconds = 30
+# Also say when an incident that raised an alert has closed, and how long it lasted.
+on_close = false
+# At most this many alerts in any period of this many seconds. The ones beyond are held
+# back and sent together, as one digest message, as soon as the period allows.
+max_alerts = 5
+period_seconds = 600
+# Replace IP addresses and usernames in alert text with [IP] and [user]. An alert goes to
+# an outside service: turn this on if that service is not your own (Slack, Discord). It is
+# off by default for chat you host yourself, where the names help.
+redact = false
+# Where the web pages are served, for the link in each alert. Change it to an address
+# your phone can reach if you want the link to open there.
+link_base = "http://localhost:5173"
+# The longest the one-line summary of the explanation may be in an alert, when it is
+# ready. Alerts never wait for an explanation.
+summary_chars = 200
+# Seconds to wait for a webhook to answer. A failure is tried again max_retries times,
+# waiting backoff_seconds, then twice that, then twice that again; then it is recorded.
+timeout_seconds = 10
+max_retries = 3
+backoff_seconds = 2
+# A silence longer than this is refused, so none is forgotten for good.
+max_silence_hours = 168
+
 [api]
 # The web API. Start it with:  python -m uvicorn netlog.api.app:app
 #
