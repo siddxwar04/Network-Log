@@ -292,6 +292,28 @@ class Redactor:
             lambda match: self._by_token.get(match.group(0), ("", match.group(0)))[1], text
         )
 
+    def restore_command(self, text: str) -> str:
+        """Like `restore`, for a command the user may copy and run. A real value is put back
+        only when it is plainly a name or an address; anything else (a username such as
+        `x;curl ...|sh`, chosen by whoever tried to log in) keeps its stand-in, so log
+        content can never become part of a command."""
+
+        def value(match: re.Match[str]) -> str:
+            token = match.group(0)
+            original = self._by_token.get(token, ("", token))[1]
+            return original if is_safe_in_command(original) else token
+
+        return _TOKEN_RE.sub(value, text)
+
+
+# What a value from a log may look like to be put into a command: a host name, an address,
+# an interface name. No spaces, quotes, `;`, `|`, `$`, backticks or redirections.
+_SAFE_IN_COMMAND = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@-]*")
+
+
+def is_safe_in_command(value: str | None) -> bool:
+    return bool(value) and bool(_SAFE_IN_COMMAND.fullmatch(value))
+
 
 _VALUE_RE = re.compile(f"(?P<token>{_TOKEN})|(?P<mac>{_MAC})|(?P<ip4>{_IP4})|(?P<ip6>{_IP6})")
 

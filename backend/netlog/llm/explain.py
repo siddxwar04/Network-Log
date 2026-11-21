@@ -123,7 +123,13 @@ def restore_explanation(explanation: Explanation, redactor: Redactor) -> Explana
             return {key: restore(item) for key, item in value.items()}
         return value
 
-    return Explanation.model_validate(restore(explanation.model_dump()))
+    data = restore(explanation.model_dump())
+    # Commands are shown with a Copy button: restore them more carefully.
+    for item, original in zip(
+        data["verification_commands"], explanation.verification_commands, strict=True
+    ):
+        item["command"] = redactor.restore_command(original.command)
+    return Explanation.model_validate(data)
 
 
 def make_provider(settings: LLMSettings) -> Provider | None:

@@ -28,6 +28,7 @@ from importlib import resources
 
 from netlog.config import load_config
 from netlog.llm.evidence import EvidencePack
+from netlog.redaction.redactor import is_safe_in_command
 from netlog.llm.explanation import (
     MODES,
     Explanation,
@@ -274,7 +275,12 @@ def fallback_explanation(
             )
     commands = []
     for item in template["commands"][:list_limit]:
-        command = _fill(item["command"], values)
+        # A command is shown with a Copy button, so a value from a log goes into one only
+        # when it is plainly a name or an address.
+        command = _fill(
+            item["command"],
+            {key: value if is_safe_in_command(value) else None for key, value in values.items()},
+        )
         if command is not None and len(command) <= int(limits["max_command_chars"]):
             commands.append(
                 VerificationCommand(

