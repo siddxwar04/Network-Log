@@ -64,9 +64,14 @@ def test_each_message_type_has_at_least_two_golden_cases(golden, keys):
 @pytest.mark.parametrize("path", sorted(SCENARIOS.glob("*.log")), ids=lambda p: p.name)
 def test_scenario_files_are_fully_classified(path):
     coverage = Coverage()
-    by_host = {"srv1": SourceType.LINUX_AUTH, "dhcp1": SourceType.DHCP}
+    by_host = {"srv1": SourceType.LINUX_AUTH, "dhcp1": SourceType.DHCP, "FW1": SourceType.FIREWALL}
     for event in parse_file(path, year=2026, coverage=coverage):
         expected = by_host.get(event.host, SourceType.CISCO_IOS)
+        if event.app in ("named", "dnsmasq") and "dhcp" not in (event.event_key or ""):
+            # dnsmasq answers DNS and hands out addresses; ns1 runs BIND.
+            expected = SourceType.DNS
+        elif event.app == "kernel":  # the iptables lines of a Linux server's own firewall
+            expected = SourceType.FIREWALL
         assert event.source_type is expected, event.raw
         assert event.event_key, event.raw
 

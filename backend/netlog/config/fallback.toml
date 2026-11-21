@@ -245,7 +245,7 @@ terms = "A port is the number that tells a machine which service a connection is
 impact = "Nothing, as long as every attempt was refused: a blocked scan only tells the scanner what is closed. Anything it found open is now a known target."
 checks = [
     { text = "Confirm that every connection from {entity} was refused, and look for any that the firewall let through.", why = "A refused scan costs nothing; an allowed connection from the same address is the one to follow up.", changes = false },
-    { text = "Check which of the ports that were tried are open on purpose, and whether they need to be reachable from where {entity} is.", why = "The scan shows what an attacker will try next, so anything open that need not be is worth closing.", changes = false },
+    { text = "Check which of the ports that were tried are open on purpose, and whether they need to be reachable from outside.", why = "The scan shows what an attacker will try next, so anything open that need not be is worth closing.", changes = false },
     { text = "Look up who owns {entity}, and whether it is one of your own scanners or monitoring systems.", why = "Authorized scanners and vulnerability tests look exactly like this in the logs.", changes = false },
     { text = "Block {entity} at the edge if the scan continues or comes back.", why = "This stops the noise from that address, though a scanner can move to another one.", changes = true },
 ]
@@ -285,5 +285,6 @@ checks = [
 ]
 commands = [
     { command = "grep {entity} /var/log/dnsmasq.log", purpose = "On the DNS server: the names asked for, to judge whether they look random." },
+    { command = "grep -c NXDOMAIN /var/log/dnsmasq.log", purpose = "On the DNS server: the count of answers for names that do not exist falls back to its usual level." },
 ]
 unknowns = ["Which program on the machine made the lookups. DNS logs show the machine's address, not the process."]

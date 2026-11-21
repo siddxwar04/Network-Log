@@ -199,7 +199,7 @@ threshold = 3
 
 <!-- example 1 result -->
 ```text
-Rules: 12 built-in; from tuning.toml: 1 changed (link_flap), 0 added
+Rules: 16 built-in; from tuning.toml: 1 changed (link_flap), 0 added
 Log: flaps.log, 6 lines
 
 link_flap: triggered 1 time
@@ -250,7 +250,7 @@ severity_because = "a burst of changes is easy to get wrong and hard to undo"
 
 <!-- example 2 result -->
 ```text
-Rules: 12 built-in; from storm.toml: 0 changed, 1 added (config_storm)
+Rules: 16 built-in; from storm.toml: 0 changed, 1 added (config_storm)
 Log: changes.log, 11 lines
 
 config_change: triggered 1 time
@@ -300,7 +300,7 @@ event_keys = ["SYS-5-CONFIG_I"]
 
 <!-- example 3 result -->
 ```text
-Rules: 12 built-in; from sequence.toml: 0 changed, 1 added (login_then_config)
+Rules: 16 built-in; from sequence.toml: 0 changed, 1 added (login_then_config)
 Log: login.log, 4 lines
 
 config_change: triggered 2 times

@@ -7,6 +7,7 @@ Event keys:
                     BIND's response log (`responselog`, BIND 9.20.3 and later)
   dns.query_failed  the server could not answer (BIND's query-errors category)
   dns.forwarded     the server passed the question on to another server (dnsmasq)
+  dns.upstream_error  BIND could not reach a server it asked on a client's behalf
 
 `src_ip` is the client that asked, `extra.qname` the name asked for and `extra.qtype`
 the record type (A, AAAA, MX ...). An answer carries `extra.rcode`: NOERROR, NXDOMAIN
@@ -115,6 +116,48 @@ def _bind_failed(m):
     }  # fmt: skip
 
 
+# Infoblox NIOS logs the question and the answer in one line, with BIND's own time in
+# front: `07-Apr-2022 08:08:10.043 client 192.168.0.1#57398 UDP: query: a1.example.com IN A
+# response: NOERROR +ED a1.example.com 28800 IN A 192.0.2.3;`. It is read as an answer.
+@_BIND.rule(
+    "dns.reply",
+    r"^(?:\d{2}-[A-Z][a-z]{2}-\d{4} \d{2}:\d{2}:\d{2}(?:\.\d+)? )?"
+    r"client (?P<client>[0-9a-fA-F.:]+)#(?P<cport>\d+) (?:view (?P<view>\S+): )?"
+    r"(?:UDP|TCP): query: " + _NAME + r" (?P<qclass>\S+) (?P<qtype>\S+) response: "
+    r"(?P<rcode>[A-Z]+)(?: (?P<flags>\S+))?(?: (?P<answer>.*?))?;?\s*$",
+)
+def _infoblox_response(m):
+    return {
+        "src_ip": m["client"],
+        "protocol": "dns",
+        "extra": clean(
+            {"qname": m["hostname"], "qtype": m["qtype"], "qclass": m["qclass"],
+             "rcode": _rcode(m["rcode"]), "flags": m["flags"], "src_port": m["cport"],
+             "view": m["view"]}
+        ),
+    }  # fmt: skip
+
+
+# BIND's resolver, when a server it asks does not answer: `network unreachable resolving
+# 'example.com/A/IN': 192.0.2.4#53`. The words before "resolving" are BIND's text for the
+# error (timed out, connection refused, host unreachable ...). Read from BIND's resolver.c.
+@_BIND.rule(
+    "dns.upstream_error",
+    r"^(?P<reason>[a-z][a-z -]*?) resolving '(?P<hostname>[^/'\s]+)/(?P<qtype>[^/'\s]+)"
+    r"/(?P<qclass>[^/'\s]+)': (?P<server>[0-9a-fA-F.:]+)#(?P<sport>\d+)$",
+)
+def _bind_upstream_error(m):
+    return {
+        "dst_ip": m["server"],
+        "protocol": "dns",
+        "reason": m["reason"],
+        "extra": clean(
+            {"qname": m["hostname"], "qtype": m["qtype"], "qclass": m["qclass"],
+             "dst_port": m["sport"]}
+        ),
+    }  # fmt: skip
+
+
 # dnsmasq with log-queries=extra puts a serial number and the client in front of each line:
 # `45 10.20.0.15/53211 query[A] example.com from 10.20.0.15`.
 _EXTRA = r"^(?:(?P<serial>\d+) (?P<client>[0-9a-fA-F.:]+)/(?P<cport>\d+) )?"
@@ -184,7 +227,7 @@ def spans(event: Event) -> list[Span]:
 
 
 def known_event_keys() -> set[str]:
-    return {"dns.query", "dns.reply", "dns.query_failed", "dns.forwarded"}
+    return {"dns.query", "dns.reply", "dns.query_failed", "dns.forwarded", "dns.upstream_error"}
 
 
 def apply(event: Event) -> Event:

@@ -153,4 +153,4 @@ def test_every_scenario_line_has_a_readable_time_and_host(path):
         latest = event.timestamp if latest is None else max(latest, event.timestamp)
 
     assert coverage.unparsed == 0 and coverage.partial == 0
-    assert hosts <= {"R1", "R2", "R3", "R4", "SW1", "SW2", "srv1", "dhcp1"}
+    assert hosts <= {"R1", "R2", "R3", "R4", "SW1", "SW2", "srv1", "dhcp1", "FW1", "ns1"}

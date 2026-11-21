@@ -5,8 +5,8 @@ Matching rule: A found incident matches an expected one when it is of the same t
 | Set | Files | Lines | Incidents | Found | False alarms | Precision | Recall | F1 | Root cause | Severity | Devices | Split / merged |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | **Held-out** | 160 | 894,486 | 167 | 167 | 0 | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 88.0% | 0 / 0 |
-| Tuned | 10 | 94,918 | 9 | 9 | 0 | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 88.9% | 0 / 0 |
-| Noise only | 10 | 143,014 | 0 | 0 | 0 | n/a | n/a | n/a | n/a | n/a | n/a | 0 / 0 |
+| Tuned | 12 | 104,912 | 11 | 11 | 0 | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 90.9% | 0 / 0 |
+| Noise only | 10 | 143,015 | 0 | 0 | 0 | n/a | n/a | n/a | n/a | n/a | n/a | 0 / 0 |
 
 Held-out, by incident type:
 
@@ -21,10 +21,10 @@ Held-out, by incident type:
 
 Other measures:
 
-- False alarms on normal traffic: 0.00 per 10,000 lines (143,014 lines).
-- Speed: 5,340 to 5,489 lines per second for reading, detection and correlation, by set.
-- Compression: 94,918 lines of the tuned set become 299 message patterns, 317 to 1.
-- Evidence pack, what an LLM would be shown: median 849 and largest 2931 tokens (estimated) for 9 incidents, against a limit of 3000.
+- False alarms on normal traffic: 0.00 per 10,000 lines (143,015 lines).
+- Speed: 4,085 to 4,657 lines per second for reading, detection and correlation, by set.
+- Compression: 104,912 lines of the tuned set become 396 message patterns, 265 to 1.
+- Evidence pack, what an LLM would be shown: median 702 and largest 2931 tokens (estimated) for 11 incidents, against a limit of 3000.
 - Explanations (citation validity, fallback rate, tokens and latency of real requests): not measured here, since it needs a real LLM and costs requests.
 
 Where these numbers are weak:

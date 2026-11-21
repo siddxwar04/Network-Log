@@ -71,6 +71,7 @@ KIND_NAMES = {
     "brute_force_login": "brute_force",
     "ospf_adjacency_loss": "ospf_adjacency_loss",
     "device_restart": "device_reload",
+    "dns_failure_spike": "dns_failure",
 }
 
 

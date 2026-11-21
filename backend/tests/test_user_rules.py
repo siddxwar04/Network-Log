@@ -293,7 +293,7 @@ def test_the_api_lists_the_rules_in_force(tmp_path, rules_file):
     with TestClient(build(tmp_path)) as client:
         body = client.get("/api/rules").json()
     by_name = {item["name"]: item for item in body["items"]}
-    assert body["total"] == len(body["items"]) == 13
+    assert body["total"] == len(body["items"]) == 17
     assert body["user_file"] == str(rules_file)
     assert body["critical"] == {"devices": ["R1"], "interfaces": []}
     flap = by_name["link_flap"]

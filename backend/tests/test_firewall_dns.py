@@ -95,9 +95,9 @@ def test_new_scenarios_and_the_noise_parse_completely():
         statuses = Counter(e.parse_status.value for e in events)
         assert statuses == {"parsed": len(lines)}, (name, statuses)
         edge = [e for e in events if e.source_type.value in ("firewall", "dns")]
-        assert len(edge) > 1000
-        # Every firewall and DNS line is recognized, apart from named's other messages.
-        unknown = [e.raw for e in edge if not e.event_key and "unreachable" not in e.raw]
+        assert len(edge) >= 1000
+        # Every firewall and DNS line is recognized.
+        unknown = [e.raw for e in edge if not e.event_key]
         assert unknown == []
 
 

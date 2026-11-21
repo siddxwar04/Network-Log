@@ -22,8 +22,8 @@ def test_every_scenario_passes_when_the_topology_is_known(with_topology):
     failed = {check.scenario: check.problems for check in with_topology if not check.passed}
 
     assert failed == {}
-    assert len(with_topology) == 10
-    assert "10 of 10 scenarios pass." in to_markdown(with_topology)
+    assert len(with_topology) == 12
+    assert "12 of 12 scenarios pass." in to_markdown(with_topology)
 
 
 def test_from_the_logs_alone_only_the_unseen_cable_is_missed(logs_only):

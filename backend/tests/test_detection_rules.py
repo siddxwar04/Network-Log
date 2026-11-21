@@ -317,6 +317,10 @@ def test_base_levels():
         "device_reload": "high",
         "device_restart": "critical",
         "mac_flapping": "high",
+        "port_scan": "medium",
+        "port_sweep": "medium",
+        "dns_failure_spike": "medium",
+        "dns_nxdomain_burst": "medium",
     }
 
 
