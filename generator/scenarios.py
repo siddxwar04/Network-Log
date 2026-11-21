@@ -20,6 +20,7 @@ from datetime import datetime
 
 from generator import messages as m
 from generator import topology as topo
+from generator.edge import EdgeNoise
 from generator.noise import Noise, random_hostname, random_mac
 from generator.records import Rec, sec
 
@@ -43,6 +44,9 @@ class Built:
     # Noise that would contradict the scenario is removed with this filter.
     keep_noise: Callable[[Rec], bool] = lambda rec: True
     reserved_ports: frozenset[tuple[str, str]] = frozenset()
+    # Add the firewall's and the DNS servers' everyday lines. Only the noise-only scenario
+    # and the edge scenarios do, so the files of the others do not change.
+    edge: bool = False
 
 
 _BRUTE_USERS = ("root", "admin", "ubuntu", "test", "oracle", "postgres", "git", "deploy", "user")
@@ -379,7 +383,88 @@ def device_reload(rng, start, end) -> Built:
 
 def noise_only(rng, start, end) -> Built:
     """8. A normal day. Nothing is wrong."""
-    return Built([], [])
+    return Built([], [], edge=True)
+
+
+def port_scan(rng, start, end, ports: int = 500, seconds: float = 150) -> Built:
+    """6. One address on the internet tries 500 ports on the firewall's outside address in
+    a few minutes, as a scanning tool does, and the firewall refuses every one."""
+    t = _moment(rng, start, end)
+    inc = "inc-1"
+    targets = rng.sample(range(1, 10000), ports)
+    recs: list[Rec] = []
+    sport = rng.randrange(40000, 60000)
+    for i, port in enumerate(targets):
+        at = t + sec(seconds * i / ports + rng.uniform(0, 0.2))
+        body = m.asa_deny_acl("tcp", topo.SCANNER_IP, sport, "outside",
+                              topo.FIREWALL_OUTSIDE_IP, port)  # fmt: skip
+        recs.append(Rec(at, topo.FIREWALL, body, inc))
+    incident = Incident(
+        id=inc,
+        type="port_scan",
+        title=f"Port scan of the firewall from {topo.SCANNER_IP}",
+        root_cause={"kind": "port_scan", "device": topo.FIREWALL, "entity": topo.SCANNER_IP},
+        devices=[topo.FIREWALL],
+        expected_severity="medium",
+        notes="Every attempt is refused by the outside access list; nothing gets through.",
+        facts={"ports_tried": ports, "allowed": 0},
+    )
+    return Built(recs, [incident], edge=True)
+
+
+def dns_failure(rng, start, end, minutes: float = 10, failing: float = 0.85) -> Built:
+    """11. ns1 loses its way to the internet's DNS servers for 10 minutes: most questions
+    it cannot answer from its cache fail with SERVFAIL."""
+    t = _moment(rng, start, end)
+    inc = "inc-1"
+    stop = t + sec(minutes * 60)
+    pid = rng.randrange(600, 900)
+    recs: list[Rec] = []
+    asked = failed = 0
+    at = t
+    while at < stop:
+        client = rng.choice((*topo.SERVER_LAN_HOSTS, topo.DHCP1_IP, topo.DHCP1_IP))
+        cport = rng.randrange(1024, 65000)
+        handle = f"7f{rng.randrange(0x10000000, 0xFFFFFFFF):08x}{rng.randrange(16):x}0"
+        name = rng.choice(("www.example.com", "updates.example.net", "api.example.org",
+                           "mail.example.com", "cdn.example.net", "login.example.com",
+                           "files.example.net", "repo.example.net"))  # fmt: skip
+        qtype = rng.choice(("A", "A", "AAAA"))
+        recs.append(Rec(at, topo.RESOLVER, m.bind_query(
+            pid, handle, client, cport, name, qtype, topo.RESOLVER_IP), inc))  # fmt: skip
+        asked += 1
+        if rng.random() < failing:
+            failed += 1
+            gave_up = at + sec(rng.uniform(1.2, 3.5))
+            if rng.random() < 0.3:
+                root = rng.choice(("192.0.2.4", "198.51.100.12", "203.0.113.30"))
+                recs.append(Rec(gave_up - sec(0.5), topo.RESOLVER,
+                                m.bind_unreachable(pid, name, qtype, root), inc))  # fmt: skip
+            recs.append(Rec(gave_up, topo.RESOLVER, m.bind_query_failed(
+                pid, handle, client, cport, name, qtype, "SERVFAIL"), inc))  # fmt: skip
+        at = at + sec(rng.expovariate(1 / 5.0))
+    incident = Incident(
+        id=inc,
+        type="dns_failure",
+        title="DNS resolver ns1 failing: most queries answered with SERVFAIL for 10 minutes",
+        root_cause={"kind": "dns_failure_spike", "device": topo.RESOLVER, "entity": topo.RESOLVER},
+        devices=[topo.RESOLVER],
+        expected_severity="high",
+        notes=(
+            "The resolver cannot reach the servers above it. dnsmasq on dhcp1 forwards to ns1, "
+            "but its everyday lines are left out during the failure so that only ns1 shows it."
+        ),
+        facts={"queries": asked, "failed": failed, "minutes": minutes},
+    )
+    window = (t - sec(60), stop + sec(60))
+
+    def keep(rec: Rec) -> bool:
+        # No everyday DNS lines around the failure: ns1's own would have to fail too, and
+        # dnsmasq's would show a second server failing.
+        dns = rec.kind in ("server_lookup", "client_lookup", "broken_domain")
+        return not (dns and window[0] <= rec.t <= window[1])
+
+    return Built(recs, [incident], keep_noise=keep, edge=True)
 
 
 # Usernames an attacker types hoping that whatever reads the log will obey them. sshd
@@ -465,10 +550,12 @@ SCENARIOS: dict[str, tuple[str, Callable[..., Built]]] = {
     "config_bgp": ("03_config_bgp", config_bgp),
     "brute_force": ("04_brute_force", brute_force),
     "dhcp_exhaustion": ("05_dhcp_exhaustion", dhcp_exhaustion),
+    "port_scan": ("06_port_scan", port_scan),
     "device_reload": ("07_device_reload", device_reload),
     "noise": ("08_noise", noise_only),
     "prompt_injection": ("09_prompt_injection", prompt_injection),
     "overlap": ("10_overlap", overlap),
+    "dns_failure": ("11_dns_failure", dns_failure),
 }
 
 
@@ -479,6 +566,13 @@ def build(
     `settings` are passed to the scenario, for those that take any."""
     built = SCENARIOS[name][1](rng, start, end, **settings)
     noise = Noise(rng, start, end, built.reserved_ports)
-    target = max(lines - len(built.recs), lines // 3)
+    # The firewall and DNS servers write a fifth of the everyday lines where they are added.
+    edge_lines = lines // 5 if built.edge else 0
+    target = max(lines - len(built.recs) - edge_lines, lines // 3)
     built.recs = built.recs + [r for r in noise.generate(target) if built.keep_noise(r)]
+    if built.edge:
+        # Its own random stream, seeded from the main one without drawing from it, so the
+        # other scenarios' files are exactly what they were before edge noise existed.
+        edge = EdgeNoise(random.Random(hash(rng.getstate()[1])), start, end)
+        built.recs += [r for r in edge.generate(edge_lines) if built.keep_noise(r)]
     return built

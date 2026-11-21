@@ -716,9 +716,11 @@ def test_a_quiet_log_has_a_summary_and_no_incidents(client):
 def test_the_demo_scenarios_are_listed_with_what_happens_in_each(loaded):
     listing = loaded.get("/api/demo/scenarios").json()
 
-    assert listing["total"] == 10
+    assert listing["total"] == 12
     names = [item["name"] for item in listing["items"]]
     assert names == sorted(names) and "02_cascade" in names and "08_noise_50k" in names
+    # The firewall and DNS scenarios are demo cards too.
+    assert {"06_port_scan", "11_dns_failure"} <= set(names)
     cascade_item = next(item for item in listing["items"] if item["name"] == "02_cascade")
     assert set(cascade_item) == {"name", "description", "lines", "year", "incidents"}
     assert cascade_item["description"].startswith("R1 lost its transit link")

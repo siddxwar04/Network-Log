@@ -58,6 +58,10 @@ def render(recs: list[Rec], rng: random.Random) -> Rendered:
     # Network delay to the collector, fixed per device so one device's lines keep their order.
     delay = {h: sec(rng.uniform(0.005, 0.3)) for h in topo.CISCO_HOSTS}
     seq = {h: rng.randrange(1000, 90000) for h in topo.CISCO_HOSTS}
+    # The firewall and the resolver are drawn last, so every file without them stays
+    # exactly as it was before they existed. The ASA's lines are written like a Linux
+    # host's: the collector's time, the name, the message.
+    skew.update({h: sec(rng.uniform(-2.0, 2.0)) for h in topo.EDGE_HOSTS})
 
     def written_at(rec: Rec) -> datetime:
         if rec.host in delay:

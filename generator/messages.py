@@ -175,3 +175,92 @@ def dhcp_ack(ip: str, mac: str, hostname: str, interface: str) -> str:
 
 def dhcp_no_free_leases(mac: str, interface: str, network: str) -> str:
     return f"{_DHCPD}: DHCPDISCOVER from {mac} via {interface}: network {network}: no free leases"
+
+
+# --- Cisco ASA ----------------------------------------------------------------------------
+# Formats from Cisco's ASA syslog message guide; see the backend's firewall parser for which
+# were checked against it.
+
+
+def asa_deny_acl(proto: str, src: str, sport: int, dst_if: str, dst: str, dport: int,
+                 acl: str = "OUTSIDE_IN") -> str:  # fmt: skip
+    return (
+        f"%ASA-4-106023: Deny {proto} src outside:{src}/{sport} dst {dst_if}:{dst}/{dport} "
+        f'by access-group "{acl}" [0x0, 0x0]'
+    )
+
+
+def asa_deny_inbound_tcp(src: str, sport: int, dst: str, dport: int) -> str:
+    return (
+        f"%ASA-2-106001: Inbound TCP connection denied from {src}/{sport} to {dst}/{dport} "
+        "flags SYN on interface outside"
+    )
+
+
+def asa_built_outbound(conn: int, remote: str, rport: int, local: str, lport: int,
+                       mapped: str) -> str:  # fmt: skip
+    return (
+        f"%ASA-6-302013: Built outbound TCP connection {conn} for outside:{remote}/{rport} "
+        f"({remote}/{rport}) to inside:{local}/{lport} ({mapped}/{lport})"
+    )
+
+
+def asa_teardown(conn: int, remote: str, rport: int, local: str, lport: int, duration: str,
+                 nbytes: int, reason: str) -> str:  # fmt: skip
+    return (
+        f"%ASA-6-302014: Teardown TCP connection {conn} for outside:{remote}/{rport} to "
+        f"inside:{local}/{lport} duration {duration} bytes {nbytes} {reason}"
+    )
+
+
+# --- Linux kernel firewall (UFW) ------------------------------------------------------------
+
+
+def ufw_block(uptime: float, nic: str, src: str, dst: str, proto: str, sport: int,
+              dport: int, ttl: int, ident: int) -> str:  # fmt: skip
+    flags = " WINDOW=64240 RES=0x00 SYN URGP=0" if proto == "TCP" else f" LEN={ttl + 8}"
+    return (
+        f"kernel: [{uptime:.6f}] [UFW BLOCK] IN={nic} OUT= "
+        f"MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC={src} DST={dst} LEN=60 TOS=0x00 "
+        f"PREC=0x00 TTL={ttl} ID={ident} DF PROTO={proto} SPT={sport} DPT={dport}{flags}"
+    )
+
+
+# --- BIND (named) -------------------------------------------------------------------------
+
+
+def bind_query(pid: int, handle: str, client: str, cport: int, name: str, qtype: str,
+               server: str) -> str:  # fmt: skip
+    return (
+        f"named[{pid}]: client @0x{handle} {client}#{cport} ({name}): "
+        f"query: {name} IN {qtype} +E(0)K ({server})"
+    )
+
+
+def bind_query_failed(pid: int, handle: str, client: str, cport: int, name: str, qtype: str,
+                      rcode: str) -> str:  # fmt: skip
+    return (
+        f"named[{pid}]: client @0x{handle} {client}#{cport} ({name}): "
+        f"query failed ({rcode}) for {name}/IN/{qtype} at query.c:7245"
+    )
+
+
+def bind_unreachable(pid: int, name: str, qtype: str, server: str) -> str:
+    return f"named[{pid}]: network unreachable resolving '{name}/{qtype}/IN': {server}#53"
+
+
+# --- dnsmasq (log-queries=extra) -------------------------------------------------------------
+
+
+def dnsmasq_query(pid: int, serial: int, client: str, cport: int, qtype: str, name: str) -> str:
+    return f"dnsmasq[{pid}]: {serial} {client}/{cport} query[{qtype}] {name} from {client}"
+
+
+def dnsmasq_forwarded(pid: int, serial: int, client: str, cport: int, name: str,
+                      upstream: str) -> str:  # fmt: skip
+    return f"dnsmasq[{pid}]: {serial} {client}/{cport} forwarded {name} to {upstream}"
+
+
+def dnsmasq_reply(pid: int, serial: int, client: str, cport: int, name: str, answer: str,
+                  source: str = "reply") -> str:  # fmt: skip
+    return f"dnsmasq[{pid}]: {serial} {client}/{cport} {source} {name} is {answer}"

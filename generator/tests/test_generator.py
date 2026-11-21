@@ -69,7 +69,7 @@ def test_lines_are_in_timestamp_order(generated, name):
 
 @pytest.mark.parametrize("name", SCENARIOS)
 def test_every_line_has_a_known_host(generated, name):
-    known = set(topo.CISCO_HOSTS + topo.LINUX_HOSTS)
+    known = set(topo.CISCO_HOSTS + topo.LINUX_HOSTS + topo.EDGE_HOSTS)
     assert {host_of(line) for line in lines_of(generated, name)} <= known
 
 
@@ -220,8 +220,9 @@ def test_reloading_switch_is_silent_then_boots_with_a_reset_counter(generated):
     assert next_line.split()[4] == "1:"  # message counter restarted
     assert " *Mar  1 00:00:52" in next_line  # clock not yet synchronized
     labelled = incident_lines(generated, "device_reload")
-    assert any(host_of(x) == "R3" and "GigabitEthernet0/3, changed state to down" in x
-               for x in labelled)
+    assert any(
+        host_of(x) == "R3" and "GigabitEthernet0/3, changed state to down" in x for x in labelled
+    )
 
 
 def test_overlap_has_two_separate_incidents_at_the_same_time(generated):
@@ -266,3 +267,95 @@ def test_noise_includes_deliberate_shutdowns_and_short_interface_names():
 
     assert "administratively down" in text
     assert "%ILPOWER-5-POWER_GRANTED: Interface Gi0/" in text
+
+
+# --- The edge: firewall and DNS ------------------------------------------------------------
+
+DENY = re.compile(
+    r"Deny tcp src outside:(\S+)/\d+ dst \S+?:\S+/(\d+)|denied from (\S+)/\d+ to \S+/(\d+)"
+)
+NXDOMAIN = re.compile(r"dnsmasq\[\d+\]: \d+ (\S+)/\d+ reply (\S+) is NXDOMAIN")
+SERVFAIL = re.compile(r"ns1 named\[\d+\]: .*query failed \(SERVFAIL\)")
+
+
+def most_different_in_window(pairs: list[tuple[datetime, str]], seconds: int) -> int:
+    """The most different values seen inside any window of the given length."""
+    pairs = sorted(pairs)
+    best = 0
+    for i, (start, _) in enumerate(pairs):
+        inside = {value for t, value in pairs[i:] if t - start <= timedelta(seconds=seconds)}
+        best = max(best, len(inside))
+    return best
+
+
+def test_scenarios_without_the_edge_are_unchanged_by_it(generated):
+    """Adding the firewall and DNS servers changed no other scenario's file."""
+    for name, (prefix, _) in SCENARIOS.items():
+        if name in ("noise", "port_scan", "dns_failure"):
+            continue
+        text = generated[name][0]
+        assert text == (Path("data/scenarios") / f"{prefix}.log").read_text(encoding="utf-8")
+        assert " FW1 " not in text and " ns1 " not in text and "dnsmasq[" not in text
+
+
+def test_the_noise_has_a_fifth_of_its_lines_from_the_edge(generated):
+    log = lines_of(generated, "noise")
+    edge = [x for x in log if host_of(x) in topo.EDGE_HOSTS or "dnsmasq[" in x or "kernel:" in x]
+    assert {host_of(x) for x in edge} == {"FW1", "ns1", "dhcp1", "srv1"}
+    assert 0.15 < len(edge) / len(log) < 0.25
+
+
+@pytest.mark.parametrize(("seed", "lines", "hours"), [(1, 5000, 6), (3, 5000, 6), (1, 50000, 24)])
+def test_edge_noise_contains_no_incident_signature(seed, lines, hours):
+    log = generate("noise", seed=seed, lines=lines, hours=hours)[0].splitlines()
+    ports: dict[str, list] = {}
+    missing: dict[str, list] = {}
+    failures = []
+    for line in log:
+        if match := DENY.search(line):
+            src, port = (match[1], match[2]) if match[1] else (match[3], match[4])
+            ports.setdefault(src, []).append((header_time(line), port))
+        elif match := NXDOMAIN.search(line):
+            missing.setdefault(match[1], []).append((header_time(line), match[2]))
+        elif SERVFAIL.search(line):
+            failures.append(header_time(line))
+    assert ports and missing and failures  # the look-alikes are present...
+    # ...but far below the thresholds: 25 ports in a minute, 50 missing names in 5 minutes,
+    # 20 failures in 5 minutes.
+    assert max(most_different_in_window(p, 60) for p in ports.values()) <= 6
+    assert max(most_different_in_window(m, 300) for m in missing.values()) <= 5
+    assert max_in_window(failures, 300) <= 3
+    assert topo.SCANNER_IP not in "\n".join(log)
+
+
+def test_port_scan_is_500_refused_ports_from_one_address(generated):
+    (incident,) = generated["port_scan"][1]["incidents"]
+    lines = incident_lines(generated, "port_scan")
+    assert incident["root_cause"] == {
+        "kind": "port_scan",
+        "device": "FW1",
+        "entity": topo.SCANNER_IP,
+    }
+    assert incident["expected_severity"] == "medium" and incident["devices"] == ["FW1"]
+    assert len(lines) == 500 and all(host_of(x) == "FW1" for x in lines)
+    found = {DENY.search(x)[2] for x in lines if DENY.search(x)[1] == topo.SCANNER_IP}
+    assert len(found) == 500
+    start, end = header_time(lines[0]), header_time(lines[-1])
+    assert timedelta(minutes=2) <= end - start <= timedelta(minutes=3)
+
+
+def test_dns_failure_is_ten_minutes_of_servfail_on_ns1(generated):
+    (incident,) = generated["dns_failure"][1]["incidents"]
+    lines = incident_lines(generated, "dns_failure")
+    failed = [x for x in lines if SERVFAIL.search(x)]
+    asked = [x for x in lines if "): query: " in x]
+    assert incident["facts"]["failed"] == len(failed) and incident["facts"]["queries"] == len(asked)
+    assert 0.7 < len(failed) / len(asked) < 0.95
+    assert all(host_of(x) == "ns1" for x in lines)
+    span = header_time(lines[-1]) - header_time(lines[0])
+    assert timedelta(minutes=9) <= span <= timedelta(minutes=11)
+    # No other DNS server's lines around the failure, which would show a second one failing.
+    text, _ = generated["dns_failure"]
+    start, end = header_time(lines[0]), header_time(lines[-1])
+    others = [x for x in text.splitlines() if "dnsmasq[" in x and start <= header_time(x) <= end]
+    assert others == []

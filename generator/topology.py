@@ -42,3 +42,22 @@ NETWORK_ADMINS = ("netops", "jdoe", "asingh")
 SERVER_USERS = {"deploy": 1001, "alice": 1002, "bob": 1003, "backup": 1004, "monitor": 1005}
 
 ATTACKER_IP = "192.0.2.77"
+
+# The edge firewall, a Cisco ASA between both ISP links and the inside. Its outside
+# address is the one the internet sees; the web server in the DMZ is reached through it.
+FIREWALL = "FW1"
+FIREWALL_OUTSIDE_IP = "198.51.100.10"
+DMZ_WEB = "10.10.10.20"  # srv1, published on the outside address
+
+# DNS: clients ask dnsmasq on dhcp1, which forwards to the BIND resolver ns1; servers ask
+# ns1 directly. ns1 resolves from the internet's own servers.
+RESOLVER = "ns1"
+RESOLVER_IP = "10.10.10.53"
+DHCP1_IP = "10.10.10.5"
+SERVER_LAN_HOSTS = ("10.10.10.20", "10.10.10.21", "10.10.10.22", "10.10.10.30")
+
+# Devices that only the edge scenarios (firewall and DNS) write lines for.
+EDGE_HOSTS = (FIREWALL, RESOLVER)
+
+# The address that scans the firewall in scenario 6.
+SCANNER_IP = "203.0.113.66"
