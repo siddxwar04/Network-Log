@@ -34,6 +34,8 @@ class SourceType(StrEnum):
     CISCO_IOS = "cisco_ios"
     LINUX_AUTH = "linux_auth"
     DHCP = "dhcp"
+    FIREWALL = "firewall"
+    DNS = "dns"
     SYSLOG_GENERIC = "syslog_generic"
     UNKNOWN = "unknown"
 

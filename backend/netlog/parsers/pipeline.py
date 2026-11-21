@@ -10,7 +10,7 @@ from datetime import UTC, tzinfo
 from pathlib import Path
 
 from netlog.ingestion.reader import DEFAULT_MAX_LINE_LENGTH, RawLine, read_lines
-from netlog.parsers import cisco, dhcp, linux_auth
+from netlog.parsers import cisco, dhcp, dns, firewall, linux_auth
 from netlog.parsers.cisco import CiscoParser
 from netlog.parsers.patterns import Span
 from netlog.parsers.syslog import SyslogParser
@@ -26,6 +26,10 @@ def free_text_spans(event: Event) -> list[Span]:
         return linux_auth.spans(event)
     if event.source_type is SourceType.DHCP:
         return dhcp.spans(event)
+    if event.source_type is SourceType.FIREWALL:
+        return firewall.spans(event)
+    if event.source_type is SourceType.DNS:
+        return dns.spans(event)
     return []
 
 
@@ -80,10 +84,15 @@ class LineParser:
     def __init__(self, year: int | None = None, tz: tzinfo = UTC) -> None:
         self._syslog = SyslogParser(year=year, tz=tz)
         self._cisco = CiscoParser(year=year, tz=tz)
+        self._tz = tz
 
     def parse(self, raw: RawLine) -> Event:
         event = self._cisco.apply(self._syslog.parse(raw))
+        if event.parse_status is ParseStatus.UNPARSED:
+            # BIND's own log file has a header of its own, not a syslog one.
+            event = dns.parse_bind_file_line(raw, self._tz) or event
         event = dhcp.apply(linux_auth.apply(event))
+        event = dns.apply(firewall.apply(event))
         if raw.truncated and event.parse_status is ParseStatus.PARSED:
             event.parse_status = ParseStatus.PARTIAL
         return event

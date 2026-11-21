@@ -28,7 +28,7 @@ The schema is defined in `backend/netlog/schema.py`.
 | Field | Required | Meaning | Example |
 |---|---|---|---|
 | `host` | No | The device that wrote the line | `R1` |
-| `source_type` | No (default `unknown`) | The kind of log: `cisco_ios`, `linux_auth`, `dhcp`, `syslog_generic` or `unknown` | `cisco_ios` |
+| `source_type` | No (default `unknown`) | The kind of log: `cisco_ios`, `linux_auth`, `dhcp`, `firewall`, `dns`, `syslog_generic` or `unknown` | `cisco_ios` |
 | `app` | No | The program or syslog tag that wrote the line | `sshd` |
 
 ### Classification
@@ -207,6 +207,69 @@ Lines from `dhcpd` get the source type `dhcp`. In these events `mac` is the clie
 | `lease` | For `dhcp.release`: `found` or `not found` |
 
 A line from one of these programs with a message that matches no pattern is still an event with the right source type. It has no event key.
+
+## Firewall events
+
+Cisco ASA messages and Linux iptables (and UFW) packet logs get the source type `firewall`. Every one says what the firewall did in `extra.action`:
+
+| `action` | Meaning |
+|---|---|
+| `deny` | Refused or dropped |
+| `allow` | Let through: an ASA `Built` connection, a permitting access list, an iptables rule whose prefix says ACCEPT or ALLOW |
+| `teardown` | A connection that had been let through has ended |
+| `log` | Logged by an iptables rule whose prefix does not say what it did |
+
+`src_ip` and `extra.src_port` are who started the connection, `dst_ip` and `port` where it was going, `protocol` is `tcp`, `udp`, `icmp` and so on, and `interface` is where it arrived: an ASA interface name such as `outside`, or a Linux one such as `eth0`.
+
+### Cisco ASA
+
+The event key is `ASA-` and the message number, **without the severity**: `%ASA-4-106023` becomes `ASA-106023`. An ASA administrator can change the level of any message, and a rule should not stop matching when they do. The level is still in `severity`. Firepower Threat Defense (`%FTD-`) uses the same numbers and gets the same keys.
+
+| Event key | Message | Entities |
+|---|---|---|
+| `ASA-106001` | `Inbound TCP connection denied from <src>/<port> to <dst>/<port> flags <flags> on interface <if>` | `src_ip`, `dst_ip`, `port`, `interface`; `extra.flags` |
+| `ASA-106006` | `Deny inbound UDP from <src>/<port> to <dst>/<port> on interface <if>` | as above |
+| `ASA-106007` | `Deny inbound UDP from ... due to DNS Response` (or `Query`) | as above, `reason` |
+| `ASA-106010` | `Deny inbound <proto> src <if>:<src>/<port> dst <if>:<dst>/<port>` | as above, `extra.dst_interface` |
+| `ASA-106014` | `Deny inbound icmp src <if>:<src> dst <if>:<dst> (type n, code n)` | as above, `extra.icmp_type`, `extra.icmp_code` |
+| `ASA-106015` | `Deny TCP (no connection) from <src>/<port> to <dst>/<port> flags <flags> on interface <if>` | as above, `reason` |
+| `ASA-106021` | `Deny <proto> reverse path check from <src> to <dst> on interface <if>` | as above, `reason` |
+| `ASA-106023` | `Deny <proto> src <if>:<src>/<port> dst <if>:<dst>/<port> by access-group "<acl>"` | as above, `extra.acl` |
+| `ASA-106100` | `access-list <acl> denied\|permitted <proto> <if>/<src>(<port>) -> <if>/<dst>(<port>) hit-cnt ...` | as above, `extra.acl`; action `deny` or `allow` |
+| `ASA-710003` | `<proto> access denied by ACL from <src>/<port> to <if>:<dst>/<service>` (a connection to the firewall itself) | as above; `port` when the service is a number, else `extra.service` |
+| `ASA-302013`, `ASA-302015` | `Built inbound\|outbound TCP\|UDP connection <id> for <if>:<addr>/<port> (...) to <if>:<addr>/<port> (...)` | `allow`. For `outbound` the second address started the connection, so the two are swapped. `extra.connection`, `extra.direction` |
+| `ASA-302014`, `ASA-302016` | `Teardown TCP\|UDP connection <id> for ... to ... duration <h:mm:ss> bytes <n> <reason>` | `teardown`. The two ends in the order printed: the message does not say which side started it. `extra.duration`, `extra.bytes`, `extra.reason` |
+| `ASA-113005`, `ASA-113015` | `AAA user authentication Rejected : reason = ... : server = ...\|local database : user = ... : user IP = ...` | `username`, `src_ip`, `reason`; action `deny` |
+| `ASA-605004` | `Login denied from <src>/<port> to <if>:<dst>/<service> for user '<name>'` | `username`, `src_ip`, `dst_ip`, `protocol` (the service); action `deny` |
+
+Any other ASA message keeps its key and severity and is not read further. A listed message that does not look as expected is `partial`.
+
+The formats were checked against Cisco's *ASA Series Syslog Messages* guide and Cisco's published example lines, except 106010 and 106014, whose text in the guide could not be read in full: they follow the guide's partial template and are less certain.
+
+### iptables and UFW
+
+The kernel logs a packet as `<prefix> IN=<if> OUT=<if> MAC=... SRC=... DST=... ... PROTO=TCP SPT=... DPT=...`. The prefix is whatever the rule's author chose, so the action is read from words in it: BLOCK, DROP, DENY, REJECT give `iptables.deny`; ACCEPT, ALLOW, PERMIT give `iptables.allow`; anything else `iptables.log`. UFW writes `[UFW BLOCK]` and `[UFW ALLOW]`. The prefix is kept in `extra.prefix`, `OUT` in `extra.out_interface`. ICMP packets carry `extra.icmp_type` and `extra.icmp_code` instead of ports; an ICMP error quotes the packet it is about in brackets, and only the fields before the bracket are read.
+
+## DNS events
+
+Lines from BIND (`named`) and `dnsmasq` get the source type `dns`.
+
+| Event key | Meaning | Lines |
+|---|---|---|
+| `dns.query` | A client asked a question | BIND: `client @0x... <ip>#<port> (<name>): query: <name> IN <type> <flags> (<server>)`; dnsmasq: `query[<type>] <name> from <ip>` |
+| `dns.reply` | The server answered | dnsmasq: `reply\|cached\|config <name> is <answer>`; BIND 9.20.3 and later with `responselog yes;`: `... response: <name> IN <type> <rcode> ...` |
+| `dns.query_failed` | The server could not answer | BIND's query-errors category: `... query failed (<reason>) for <name>/IN/<type> at ...` |
+| `dns.forwarded` | The question was passed on | dnsmasq: `forwarded <name> to <server>` |
+
+`src_ip` is the client that asked. `extra.qname` is the name asked for and `extra.qtype` the record type. An answer carries `extra.rcode`: `NOERROR`, `NXDOMAIN` (the name does not exist), `SERVFAIL`, `REFUSED` or `TIMEOUT`; a dnsmasq answer that is an address keeps it in `extra.answer`, and NODATA counts as `NOERROR`.
+
+- dnsmasq names the client on an answer only with `log-queries=extra`, which puts a serial number and `<client>/<port>` at the start of every line. Without it, answers have no `src_ip`.
+- dnsmasq logs an error from upstream as `reply error is SERVFAIL`, with the word `error` where the name would be, so such an answer has no `qname`.
+- BIND does not log NXDOMAIN at its normal levels before 9.20.3's response log, so NXDOMAIN-based rules need dnsmasq, or BIND 9.20.3 or later.
+- BIND's own query log file (`21-Nov-2026 10:00:00.123 queries: info: client ...`) is read too. It has a year but no timezone and no host name.
+- Names are chosen by whoever asks, so a name can be any text. It is only stored and shown as text, and template mining masks it like a username.
+
+The formats were checked against BIND's reference manual and source code and dnsmasq's source code. BIND's `response:` line was checked against the source only; no published example was found.
 
 ## Worked examples
 

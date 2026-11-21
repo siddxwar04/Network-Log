@@ -1,0 +1,280 @@
+[
+  {
+    "name": "106023 deny by access list (Cisco's example, addresses changed)",
+    "line": "Aug 24 08:54:48 FW1 %ASA-4-106023: Deny tcp src outside:192.0.2.63/46857 dst inside:10.10.10.77/443 by access-group \"OUTSIDE\" [0x5063b82f, 0x0]",
+    "expect": {
+      "timestamp": "2026-08-24T08:54:48Z",
+      "host": "FW1",
+      "source_type": "firewall",
+      "severity": 4,
+      "event_key": "ASA-106023",
+      "entities": {
+        "protocol": "tcp",
+        "src_ip": "192.0.2.63",
+        "dst_ip": "10.10.10.77",
+        "port": 443,
+        "interface": "outside",
+        "extra": {"action": "deny", "src_port": "46857", "dst_interface": "inside", "acl": "OUTSIDE"}
+      },
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "106023 deny of an ICMP packet, with its type and code",
+    "line": "Mar  3 02:14:07 FW1 %ASA-4-106023: Deny icmp src outside:203.0.113.5 dst inside:10.10.10.20 (type 8, code 0) by access-group \"OUTSIDE_IN\" [0x0, 0x0]",
+    "expect": {
+      "event_key": "ASA-106023",
+      "entities": {
+        "protocol": "icmp",
+        "src_ip": "203.0.113.5",
+        "dst_ip": "10.10.10.20",
+        "port": null,
+        "extra": {"action": "deny", "icmp_type": "8", "icmp_code": "0", "acl": "OUTSIDE_IN"}
+      },
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "106001 inbound TCP denied",
+    "line": "Mar  3 02:14:07 FW1 %ASA-2-106001: Inbound TCP connection denied from 198.51.100.241/44606 to 198.51.100.10/8080 flags SYN on interface outside",
+    "expect": {
+      "severity": 2,
+      "event_key": "ASA-106001",
+      "entities": {
+        "protocol": "tcp",
+        "src_ip": "198.51.100.241",
+        "dst_ip": "198.51.100.10",
+        "port": 8080,
+        "interface": "outside",
+        "extra": {"action": "deny", "src_port": "44606", "flags": "SYN"}
+      },
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "106001 with a FIN ACK",
+    "line": "Mar  3 02:14:07 FW1 %ASA-2-106001: Inbound TCP connection denied from 192.0.2.9/80 to 10.20.0.15/51000 flags FIN ACK on interface outside",
+    "expect": {
+      "event_key": "ASA-106001",
+      "entities": {"src_ip": "192.0.2.9", "port": 51000, "extra": {"action": "deny", "flags": "FIN ACK"}}
+    }
+  },
+  {
+    "name": "106006 inbound UDP denied",
+    "line": "Mar  3 02:14:07 FW1 %ASA-2-106006: Deny inbound UDP from 203.0.113.40/5060 to 198.51.100.10/5060 on interface outside",
+    "expect": {
+      "event_key": "ASA-106006",
+      "entities": {"protocol": "udp", "src_ip": "203.0.113.40", "dst_ip": "198.51.100.10", "port": 5060, "interface": "outside", "extra": {"action": "deny", "src_port": "5060"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "106007 inbound UDP denied due to DNS",
+    "line": "Mar  3 02:14:07 FW1 %ASA-2-106007: Deny inbound UDP from 192.0.2.53/53 to 10.10.10.53/40123 due to DNS Response",
+    "expect": {
+      "event_key": "ASA-106007",
+      "entities": {"protocol": "udp", "src_ip": "192.0.2.53", "port": 40123, "reason": "DNS Response", "extra": {"action": "deny"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "106010 deny inbound",
+    "line": "Mar  3 02:14:07 FW1 %ASA-3-106010: Deny inbound tcp src outside:192.0.2.81/1500 dst dmz:10.10.10.20/25",
+    "expect": {
+      "event_key": "ASA-106010",
+      "entities": {"protocol": "tcp", "src_ip": "192.0.2.81", "dst_ip": "10.10.10.20", "port": 25, "interface": "outside", "extra": {"action": "deny", "dst_interface": "dmz"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "106015 deny TCP with no connection (Cisco's example, addresses changed)",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-106015: Deny TCP (no connection) from 10.20.0.65/2278 to 198.51.100.83/80 flags RST on interface inside",
+    "expect": {
+      "event_key": "ASA-106015",
+      "entities": {"protocol": "tcp", "src_ip": "10.20.0.65", "dst_ip": "198.51.100.83", "port": 80, "interface": "inside", "extra": {"action": "deny", "flags": "RST", "reason": "no connection"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "106021 reverse path check (Cisco's example, addresses changed)",
+    "line": "Mar  3 02:14:07 FW1 %ASA-1-106021: Deny ICMP reverse path check from 10.20.0.60 to 10.10.10.1 on interface outside",
+    "expect": {
+      "severity": 1,
+      "event_key": "ASA-106021",
+      "entities": {"protocol": "icmp", "src_ip": "10.20.0.60", "dst_ip": "10.10.10.1", "interface": "outside", "reason": "reverse path check", "extra": {"action": "deny"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "106100 access list denied (Cisco's security-center form)",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-106100: access-list OUTSIDE denied tcp outside/192.0.2.63(51587) -> inside/10.10.10.77(104) hit-cnt 1 first hit [0x22e8ac21, 0x0]",
+    "expect": {
+      "event_key": "ASA-106100",
+      "entities": {"protocol": "tcp", "src_ip": "192.0.2.63", "dst_ip": "10.10.10.77", "port": 104, "interface": "outside", "extra": {"action": "deny", "acl": "OUTSIDE", "src_port": "51587"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "106100 access list permitted (the configuration guide's form)",
+    "line": "Mar  3 02:14:07 FW1 %ASA-7-106100: access-list outside-acl permitted tcp outside/192.0.2.1(12345) -> inside/10.10.10.1(1357) hit-cnt 1 (first hit)",
+    "expect": {
+      "severity": 7,
+      "event_key": "ASA-106100",
+      "entities": {"src_ip": "192.0.2.1", "port": 1357, "extra": {"action": "allow", "acl": "outside-acl"}}
+    }
+  },
+  {
+    "name": "710003 access to the firewall itself denied (the guide's example, addresses changed)",
+    "line": "Mar  3 02:14:07 FW1 %ASA-3-710003: UDP access denied by ACL from 192.0.2.14/5000 to outside:198.51.100.13/1005",
+    "expect": {
+      "event_key": "ASA-710003",
+      "entities": {"protocol": "udp", "src_ip": "192.0.2.14", "dst_ip": "198.51.100.13", "port": 1005, "extra": {"action": "deny", "dst_interface": "outside"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "710003 with a service name instead of a port",
+    "line": "Mar  3 02:14:07 FW1 %ASA-3-710003: TCP access denied by ACL from 192.0.2.14/40000 to outside:198.51.100.10/ssh",
+    "expect": {
+      "event_key": "ASA-710003",
+      "entities": {"protocol": "tcp", "port": null, "extra": {"action": "deny", "service": "ssh"}}
+    }
+  },
+  {
+    "name": "302013 built inbound (Cisco's example, addresses changed)",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-302013: Built inbound TCP connection 733280 for outside:192.0.2.63/51606 (192.0.2.63/51606) to inside:10.10.10.70/80 (198.51.100.70/80)",
+    "expect": {
+      "event_key": "ASA-302013",
+      "entities": {"protocol": "tcp", "src_ip": "192.0.2.63", "dst_ip": "10.10.10.70", "port": 80, "interface": "outside", "extra": {"action": "allow", "direction": "inbound", "connection": "733280", "src_port": "51606"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "302013 built outbound: the inside machine started it",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-302013: Built outbound TCP connection 1234 for outside:198.51.100.204/443 (198.51.100.204/443) to inside:10.20.0.73/54814 (198.51.100.10/54814)",
+    "expect": {
+      "event_key": "ASA-302013",
+      "entities": {"src_ip": "10.20.0.73", "dst_ip": "198.51.100.204", "port": 443, "interface": "inside", "extra": {"action": "allow", "direction": "outbound", "src_port": "54814", "dst_interface": "outside"}}
+    }
+  },
+  {
+    "name": "302015 built outbound UDP",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-302015: Built outbound UDP connection 99 for outside:192.0.2.123/123 (192.0.2.123/123) to inside:10.10.10.5/40123 (198.51.100.10/40123)",
+    "expect": {
+      "event_key": "ASA-302015",
+      "entities": {"protocol": "udp", "src_ip": "10.10.10.5", "dst_ip": "192.0.2.123", "port": 123, "extra": {"action": "allow"}}
+    }
+  },
+  {
+    "name": "302014 teardown (Cisco's example, addresses changed)",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-302014: Teardown TCP connection 733280 for outside:192.0.2.63/51606 to inside:10.10.10.70/80 duration 0:00:00 bytes 0 TCP Reset-O",
+    "expect": {
+      "event_key": "ASA-302014",
+      "entities": {"protocol": "tcp", "src_ip": "192.0.2.63", "dst_ip": "10.10.10.70", "port": 80, "extra": {"action": "teardown", "connection": "733280", "duration": "0:00:00", "bytes": "0", "reason": "TCP Reset-O"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "302016 UDP teardown",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-302016: Teardown UDP connection 99 for outside:192.0.2.123/123 to inside:10.10.10.5/40123 duration 0:02:01 bytes 96",
+    "expect": {
+      "event_key": "ASA-302016",
+      "entities": {"protocol": "udp", "extra": {"action": "teardown", "duration": "0:02:01", "bytes": "96"}}
+    }
+  },
+  {
+    "name": "113015 local login rejected (Cisco's example, address changed)",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-113015: AAA user authentication Rejected : reason = User was not found : local database : user = admin : user IP = 192.0.2.8",
+    "expect": {
+      "event_key": "ASA-113015",
+      "entities": {"username": "admin", "src_ip": "192.0.2.8", "reason": "User was not found", "extra": {"action": "deny"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "113015 in the template's form, with a colon after the name",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-113015: AAA user authentication Rejected : reason = Invalid password : local database : user = netops: : user IP = 10.10.10.50",
+    "expect": {
+      "event_key": "ASA-113015",
+      "entities": {"username": "netops", "src_ip": "10.10.10.50", "reason": "Invalid password"}
+    }
+  },
+  {
+    "name": "113005 rejected by a AAA server, name hidden",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-113005: AAA user authentication Rejected : reason = Unspecified : server = 10.10.10.40 : user = ***** : user IP = 192.0.2.9",
+    "expect": {
+      "event_key": "ASA-113005",
+      "entities": {"username": "*****", "src_ip": "192.0.2.9", "reason": "Unspecified", "extra": {"action": "deny", "server": "10.10.10.40"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "605004 login denied, name in single quotes",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-605004: Login denied from 192.0.2.7/51000 to outside:198.51.100.10/ssh for user 'admin'",
+    "expect": {
+      "event_key": "ASA-605004",
+      "entities": {"username": "admin", "src_ip": "192.0.2.7", "dst_ip": "198.51.100.10", "protocol": "ssh", "extra": {"action": "deny", "src_port": "51000"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "605004 with a name that imitates the rest of the message",
+    "line": "Mar  3 02:14:07 FW1 %ASA-6-605004: Login denied from 192.0.2.7/51000 to outside:198.51.100.10/https for user 'admin' from 10.0.0.1'",
+    "expect": {
+      "event_key": "ASA-605004",
+      "entities": {"username": "admin' from 10.0.0.1", "src_ip": "192.0.2.7"}
+    }
+  },
+  {
+    "name": "an ASA message not read further keeps its key and severity",
+    "line": "Mar  3 02:14:07 FW1 %ASA-5-111008: User 'enable_15' executed the 'write memory' command.",
+    "expect": {"source_type": "firewall", "severity": 5, "event_key": "ASA-111008", "parse_status": "parsed"}
+  },
+  {
+    "name": "an FTD device uses the same message numbers",
+    "line": "Mar  3 02:14:07 FTD1 %FTD-4-106023: Deny udp src outside:192.0.2.5/40000 dst inside:10.10.10.20/161 by access-group \"OUTSIDE_IN\" [0x0, 0x0]",
+    "expect": {"event_key": "ASA-106023", "entities": {"protocol": "udp", "port": 161, "extra": {"action": "deny"}}}
+  },
+  {
+    "name": "a known message that does not look as expected is partial",
+    "line": "Mar  3 02:14:07 FW1 %ASA-4-106023: something else entirely",
+    "expect": {"event_key": "ASA-106023", "parse_status": "partial"}
+  },
+  {
+    "name": "UFW block",
+    "line": "Mar  3 02:14:07 srv1 kernel: [259211.437512] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.9 DST=10.10.10.20 LEN=60 TOS=0x00 PREC=0x00 TTL=50 ID=54321 DF PROTO=TCP SPT=40000 DPT=3389 WINDOW=64240 RES=0x00 SYN URGP=0",
+    "expect": {
+      "host": "srv1",
+      "app": "kernel",
+      "source_type": "firewall",
+      "event_key": "iptables.deny",
+      "entities": {"protocol": "tcp", "src_ip": "198.51.100.9", "dst_ip": "10.10.10.20", "port": 3389, "interface": "eth0", "extra": {"action": "deny", "prefix": "[UFW BLOCK]", "src_port": "40000"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "UFW allow, UDP",
+    "line": "Mar  3 02:14:07 srv1 kernel: [259211.5] [UFW ALLOW] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=10.10.10.50 DST=10.10.10.20 LEN=76 TOS=0x00 PREC=0x00 TTL=64 ID=1 DF PROTO=UDP SPT=123 DPT=123 LEN=56",
+    "expect": {"event_key": "iptables.allow", "entities": {"protocol": "udp", "port": 123, "extra": {"action": "allow"}}}
+  },
+  {
+    "name": "iptables with a prefix of its own, forwarded packet",
+    "line": "Mar  3 02:14:07 gw1 kernel: IPTABLES-DROP: IN=eth1 OUT=eth0 SRC=10.20.0.66 DST=192.0.2.200 LEN=52 TOS=0x00 PREC=0x00 TTL=127 ID=7 DF PROTO=TCP SPT=50000 DPT=445 WINDOW=8192 RES=0x00 SYN URGP=0",
+    "expect": {"event_key": "iptables.deny", "entities": {"src_ip": "10.20.0.66", "port": 445, "interface": "eth1", "extra": {"action": "deny", "prefix": "IPTABLES-DROP:", "out_interface": "eth0"}}}
+  },
+  {
+    "name": "an ICMP error quotes the packet it is about; the outer addresses are kept",
+    "line": "Mar  3 02:14:07 gw1 kernel: [1.000000] REJECT IN=eth0 OUT= SRC=198.51.100.9 DST=10.10.10.5 LEN=88 TOS=0x00 PREC=0x00 TTL=50 ID=1 PROTO=ICMP TYPE=3 CODE=3 [SRC=10.10.10.5 DST=198.51.100.9 LEN=60 PROTO=UDP SPT=53 DPT=40000 LEN=40 ]",
+    "expect": {"event_key": "iptables.deny", "entities": {"protocol": "icmp", "src_ip": "198.51.100.9", "dst_ip": "10.10.10.5", "port": null, "extra": {"icmp_type": "3", "icmp_code": "3"}}}
+  },
+  {
+    "name": "an iptables rule whose prefix does not say what it did",
+    "line": "Mar  3 02:14:07 gw1 kernel: NEW-SSH IN=eth0 OUT= SRC=10.10.10.50 DST=10.10.10.1 LEN=60 TOS=0x00 PREC=0x00 TTL=64 ID=9 DF PROTO=TCP SPT=50001 DPT=22 WINDOW=64240 RES=0x00 SYN URGP=0",
+    "expect": {"event_key": "iptables.log", "entities": {"port": 22, "extra": {"action": "log", "prefix": "NEW-SSH"}}}
+  },
+  {
+    "name": "other kernel messages are left alone",
+    "line": "Mar  3 02:14:07 srv1 kernel: [  5.123456] e1000e 0000:00:1f.6 eth0: NIC Link is Up 1000 Mbps Full Duplex",
+    "expect": {"source_type": "syslog_generic", "event_key": null, "parse_status": "parsed"}
+  }
+]
