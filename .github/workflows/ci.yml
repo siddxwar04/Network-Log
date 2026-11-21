@@ -1,5 +1,6 @@
-# Checks every push and pull request: the backend's linter and tests, and the frontend's
-# type-check, tests and build. No secrets are used: the tests run without an LLM.
+# Checks every push and pull request: the backend's linter and tests, the frontend's
+# type-check, tests and build, and the Docker install (both images built, the stack started
+# and tried). No secrets are used: the tests run without an LLM.
 
 name: CI
 
@@ -46,3 +47,16 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # The one-command install of the README: builds both images, starts the stack on spare
+  # ports in demo mode, loads a demo scenario, sends syslog messages, then removes it all.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: docker compose version
+      - run: python deploy/smoke_test.py --timeout 300
