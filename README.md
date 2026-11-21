@@ -2,7 +2,7 @@
 
 Reads network logs, finds the incidents in them, and explains what happened in plain English, with every statement linked to the log lines that prove it.
 
-> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface works: upload a file or pick a demo, watch it being analyzed, read the dashboard, and open each incident with its explanation beside the log lines it cites, a timeline, a causal chain and a post-mortem to download. Rules can be tuned in a file of your own, devices can send their logs live, and serious live incidents raise a chat alert. Its accuracy is measured on 170 generated files the rules were never tuned on. Still to come: a one-command install, and testing on logs from real devices. See [Progress](#progress) for exactly what works today and what is left.
+> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 12 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface works: upload a file or pick a demo, watch it being analyzed, read the dashboard, and open each incident with its explanation beside the log lines it cites, a timeline, a causal chain and a post-mortem to download. Rules can be tuned in a file of your own, devices can send their logs live, and serious live incidents raise a chat alert. Its accuracy is measured on 170 generated files the rules were never tuned on, and the whole tool starts with one Docker command. Still to come: testing on logs from real devices. See [Progress](#progress) for exactly what works today and what is left.
 
 ## The problem
 
@@ -84,7 +84,7 @@ Two design rules shape the project:
 | User-editable rules | Overrides, rules of your own, critical devices, a command to try a rule file | Done |
 | Live syslog | Devices send logs over UDP or TCP; incidents open, grow and close as things happen | Done |
 | Alerts | Slack or JSON webhook messages for serious live incidents, with a rate limit, digests and silences | Done |
-| One-command install | Docker Compose and an install guide | Planned |
+| One-command install | Docker Compose and an install guide | Done |
 | DNS and firewall logs | Two more log types and rules for them, such as port scans | Planned (optional) |
 | Evaluation | Measured accuracy on 160 held-out files and 10 noise files, with every miss listed | Done |
 | Real-log testing | Results on logs from real devices the tool was not built around | Planned |
@@ -107,6 +107,7 @@ Two design rules shape the project:
 - **Has a web interface.** Upload a file or pick a demo scenario, watch the pipeline run, read the dashboard, and open an incident to see its explanation beside the log lines it cites, a timeline of every device's events, and the causal chain drawn as a diagram. Each incident can be downloaded as a post-mortem in Markdown. With no API key the app runs in demo mode and says so.
 - **Lets you tune the rules without code.** A rule file of your own changes thresholds, windows and severities, switches rules off, adds new rules and lists your critical devices. `netlog rules test` shows what a rule file would find before you rely on it, and a mistake is refused with a message naming the rule and the setting.
 - **Watches the network live.** Devices send their syslog straight to netlog over UDP or TCP. Every few seconds the same rules run over the recent messages: an incident opens when it is first found, grows as evidence arrives, keeps one id the whole time, and closes after five quiet minutes. The listener binds to this computer only unless told otherwise, can be limited to a list of senders, and rate-limits each sender. `netlog replay` sends a sample log to it as if it were happening now.
+- **Starts with one command.** `docker compose up -d --build` in `deploy/` starts the API, the live listener and the web interface together, in demo mode until you add a key. Every setting is in one commented `.env` file, data lives in a Docker volume that survives upgrades, and both containers run without root. See [docs/INSTALL.md](docs/INSTALL.md).
 - **Sends a chat alert when something serious starts.** A short message to Slack (or anything that takes Slack's format) or to any JSON webhook: the severity, what broke, the likely cause with its confidence, the devices, the start time and a link to the incident. One incident gives one alert, plus one more only if it gets worse. Floods are capped and summed up in a digest, and a device, an incident type or everything can be silenced for planned maintenance. Webhook addresses stay in `.env` and never appear in logs or API answers.
 
 On scenario 2, the live listener sends exactly one alert:
@@ -120,7 +121,6 @@ Open the incident
 
 ### What is still to come
 
-- **One-command install.** Docker Compose, so the API, the web interface and the listener start together, and an install guide.
 - **Explanation quality, measured.** Citation validity and fallback rate of real LLM answers, and scores from people using the [manual rubric](docs/EXPLANATION_RUBRIC.md).
 - **Logs from real devices.** So far every log is generated. Results on logs the tool was not built around, including from a virtual lab of real router images.
 - **DNS and firewall logs** (optional). Two more log types, with rules such as a port scan from one address.
@@ -201,7 +201,21 @@ Every threshold is a setting in `backend/netlog/config/rules.toml`. You can chan
 
 ## Getting started
 
-Requires Python 3.11 or newer. Commands are for Windows PowerShell.
+### With Docker
+
+The quickest way to try it. Needs Docker Desktop (Windows, macOS) or Docker Engine with Compose 2.24 or newer (Linux):
+
+```powershell
+git clone https://github.com/siddxwar04/Network-Log.git
+cd Network-Log/deploy
+docker compose up -d --build
+```
+
+Then open http://localhost:8080 and pick a demo scenario. [docs/INSTALL.md](docs/INSTALL.md) covers settings, adding an LLM key, pointing devices at the live listener, backups, upgrades and removal.
+
+### From source
+
+For development, and for the `netlog` command. Requires Python 3.11 or newer. Commands are for Windows PowerShell.
 
 ```powershell
 git clone https://github.com/siddxwar04/Network-Log.git
@@ -358,12 +372,14 @@ eval/                the evaluation harness and held-out sets, scorecard, pack s
                      a command to try an explanation, validity counts
   results/           the latest accuracy results
 data/scenarios/      generated logs with label files
+deploy/              Docker images, Compose file, settings example, smoke test
 docs/                reference documentation
 frontend/            web interface (React, Vite, Tailwind)
 ```
 
 ## Documentation
 
+- [docs/INSTALL.md](docs/INSTALL.md): installing and running it with Docker.
 - [docs/CLI.md](docs/CLI.md): the command, its options, exit codes and JSON output.
 - [docs/RULES.md](docs/RULES.md): every detection rule, with its log signature, thresholds, severity and usual causes.
 - [docs/WRITING_RULES.md](docs/WRITING_RULES.md): tuning the rules and writing your own, with three worked examples.
@@ -382,7 +398,8 @@ frontend/            web interface (React, Vite, Tailwind)
 - **Plain syslog has no authentication.** Anyone who can reach the listener's port can send messages that look like they come from your routers. Keep it on a network you trust; see [Live syslog](docs/CLI.md#live-syslog).
 - **Live incidents look back two hours.** An incident longer than that keeps the counts of its first findings, and a topology file is not used for live incidents yet.
 - **Alerts go to chat only.** Slack-compatible and JSON webhooks; no email or paging services, and alert settings are changed in the settings file, not on a screen. Not yet tried against a real Slack workspace.
-- **Single user, no login.** The web app and API are meant for one person's machine.
+- **Single user, no login.** The web app and API are meant for one person's machine. The Docker install publishes them on this computer only by default, without HTTPS.
+- **Live devices on Docker Desktop.** A Cisco device does not name itself in syslog, so it is named by its address; Docker Desktop on Windows and macOS may show every device as one internal address. For live monitoring of several devices, run the Docker install on Linux. See [docs/INSTALL.md](docs/INSTALL.md#send-logs-from-your-devices).
 
 ## Tech stack
 

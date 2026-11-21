@@ -1,0 +1,10 @@
+# Only what the backend image copies is sent to the builder. Everything else, including
+# .env files, local databases and uploads, stays out of the image.
+*
+!pyproject.toml
+!README.md
+!backend/netlog/
+!data/scenarios/
+!eval/results/latest.json
+**/__pycache__
+**/*.py[cod]

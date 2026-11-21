@@ -1,0 +1,7 @@
+# Only what the frontend image copies is sent to the builder.
+*
+!frontend/
+!deploy/nginx.conf
+frontend/node_modules
+frontend/dist
+frontend/**/*.local

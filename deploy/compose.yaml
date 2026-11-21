@@ -1,0 +1,61 @@
+# netlog: the API with the live syslog listener, and the web interface.
+#
+# Start (from this folder):   docker compose up -d --build
+# Then open:                  http://localhost:8080
+#
+# Every setting is in .env beside this file (copy .env.example to .env). Without one, the
+# defaults apply: demo mode, everything reachable from this computer only.
+# See docs/INSTALL.md.
+
+name: netlog
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/backend.Dockerfile
+    image: netlog-backend:local
+    restart: unless-stopped
+    env_file:
+      # The smoke test points this at .env.example, so it never uses your key or settings.
+      - path: ${NETLOG_COMPOSE_ENV_FILE:-.env}
+        required: false
+    environment:
+      NETLOG_LIVE: ${NETLOG_LIVE:-1}
+      NETLOG__ALERTS__LINK_BASE: ${NETLOG__ALERTS__LINK_BASE:-http://localhost:${NETLOG_WEB_PORT:-8080}}
+    volumes:
+      - data:/data
+    # Only the syslog port is published from this container; the API is reached through
+    # the web container. 127.0.0.1 by default: see NETLOG_SYSLOG_BIND in .env.example.
+    ports:
+      - "${NETLOG_SYSLOG_BIND:-127.0.0.1}:${NETLOG_SYSLOG_PORT:-5514}:5514/udp"
+      - "${NETLOG_SYSLOG_BIND:-127.0.0.1}:${NETLOG_SYSLOG_PORT:-5514}:5514/tcp"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+    image: netlog-frontend:local
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    # There is no login. 127.0.0.1 by default: see NETLOG_WEB_BIND in .env.example before
+    # changing it.
+    ports:
+      - "${NETLOG_WEB_BIND:-127.0.0.1}:${NETLOG_WEB_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  # The database, uploaded files and your rule file. Survives restarts, rebuilds and
+  # upgrades; removed only by `docker compose down -v`.
+  data:
