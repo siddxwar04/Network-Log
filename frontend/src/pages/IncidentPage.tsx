@@ -179,7 +179,7 @@ export default function IncidentPage() {
     [incident.data, explanation.data, lookup],
   );
 
-  // A step of the replay: mark its box in the chain and its log lines, and bring both into
+  // A step of the replay: mark the box of the chain it belongs to and its log lines, and bring both into
   // view inside their own panels. Focus stays on the controls.
   const showStep = useCallback(
     (index: number) => {
@@ -227,7 +227,7 @@ export default function IncidentPage() {
   }, []);
 
   const current = useMemo(
-    () => (replay === null || !steps[replay] ? null : new Set(steps[replay].findings)),
+    () => (replay === null || !steps[replay] ? null : new Set(steps[replay].lines)),
     [replay, steps],
   );
 
@@ -296,7 +296,7 @@ export default function IncidentPage() {
     });
 
   return (
-    <div className={replay === null ? "settle" : "settle pb-28"}>
+    <div className={replay === null ? "settle" : "settle pb-36"}>
       <PageHeader
         crumbs={crumbs}
         title={facts.headline}
@@ -407,12 +407,12 @@ export default function IncidentPage() {
               )}
               <ExplanationBody explanation={explanation.data} lookup={lookup} onSelect={select} />
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line px-4 py-3">
-                <Button id="replay-start" onClick={startReplay} disabled={replay !== null || steps.length === 0}>
+                <Button id="replay-start" variant="primary" onClick={startReplay} disabled={replay !== null || steps.length === 0}>
                   <ListVideo aria-hidden="true" className="size-4" />
                   Replay step by step
                 </Button>
                 <span className="text-xs text-muted">
-                  Walks through the {plural(steps.length, "step")} of the chain in order, with the log lines behind each.
+                  In a hurry? Goes through this explanation in {plural(steps.length, "step")}, one at a time, with the log lines behind each.
                 </span>
               </div>
             </>

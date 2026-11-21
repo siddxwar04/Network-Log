@@ -10,7 +10,7 @@ import { useEffect, useRef } from "react";
 import type { TimelineEvent } from "../api/types";
 import { useApp } from "../lib/app-state";
 import { formatNumber, utcTime } from "../lib/format";
-import { clusterOfFindings, KIND_STYLE, KINDS, laneHeight, type Cluster, type TimeRange } from "../lib/timeline";
+import { clusterOfLines, KIND_STYLE, KINDS, laneHeight, type Cluster, type TimeRange } from "../lib/timeline";
 
 echarts.use([ScatterChart, GridComponent, TooltipComponent, MarkLineComponent, BrushComponent, SVGRenderer]);
 
@@ -18,7 +18,7 @@ export interface TimelineChartProps {
   lanes: string[];
   clusters: Cluster[];
   range: TimeRange;
-  /** The findings of the replay's current step, if a replay is running. */
+  /** The log lines of the replay's current step, if a replay is running. */
   current?: ReadonlySet<number> | null;
   onZoom: (range: TimeRange) => void;
   onSelect: (event: TimelineEvent) => void;
@@ -69,7 +69,7 @@ export default function TimelineChart({ lanes, clusters, range, current = null, 
           const count = cluster.events.length;
           // During a replay the current step's markers are larger and outlined, and the
           // others fade: told apart by size and outline, not by color alone.
-          const marked = current !== null && clusterOfFindings(cluster, current);
+          const marked = current !== null && clusterOfLines(cluster, current);
           const size = (count > 1 ? 13 + Math.min(9, Math.log2(count) * 2) : 11) + (cluster.root ? 3 : 0) + (marked ? 6 : 0);
           return {
             value: [cluster.start, cluster.lane, count, index],

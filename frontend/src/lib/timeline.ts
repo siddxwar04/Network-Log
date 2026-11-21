@@ -89,10 +89,10 @@ export function clusterEvents(timeline: IncidentTimeline, range: TimeRange, slot
   return clusters;
 }
 
-/** Whether a marker holds an event of any of these findings. The replay marks the markers
- * of its current step this way. */
-export function clusterOfFindings(cluster: Cluster, findings: ReadonlySet<number>): boolean {
-  return cluster.events.some((event) => event.findings.some((id) => findings.has(id)));
+/** Whether a marker holds any of these log lines. The replay marks the markers of its
+ * current step this way. */
+export function clusterOfLines(cluster: Cluster, lines: ReadonlySet<number>): boolean {
+  return cluster.events.some((event) => lines.has(event.line));
 }
 
 /** The lanes to draw: the API's, plus one for events that name no device. */

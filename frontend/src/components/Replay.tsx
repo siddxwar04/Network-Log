@@ -1,13 +1,19 @@
-// The replay of an incident: a bar at the bottom of the screen that walks through the steps
-// of the causal chain one at a time. The page highlights each step's box in the chain, its
-// markers on the timeline and its log lines; this bar says which step it is, in words, and
-// holds the controls. Left and right arrows step, space plays and pauses, Escape leaves.
+// The replay of an incident: a bar at the bottom of the screen that walks through the
+// explanation one sentence at a time. On top it draws the steps as a track, numbered circles
+// joined by arrows like a small diagram: the current one is larger, the ones passed are
+// filled, and any of them can be clicked. Under it, the current step in words, and the
+// controls. The page highlights the step's box in the chain, its markers on the timeline
+// and its log lines. Left and right arrows step, space plays and pauses, Escape leaves.
 
-import { ChevronLeft, ChevronRight, Pause, Play, X } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, Pause, Play, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { utcTime } from "../lib/format";
-import { announce, DETAILS_SHOWN, prefersReducedMotion, type ReplayStep } from "../lib/replay";
+import { announce, prefersReducedMotion, type ReplayStep } from "../lib/replay";
 import { Button } from "./ui";
+
+/** The track draws one circle per step up to this many; a longer replay gets a plain
+ * progress line instead, as that many circles could not be read. */
+const TRACK_MAX = 24;
 
 export function ReplayBar({
   steps,
@@ -64,6 +70,11 @@ export function ReplayBar({
     if (!last) onStep(index + 1);
   };
 
+  const pick = (to: number) => {
+    onPlaying(false);
+    onStep(to);
+  };
+
   const keys = useRef({ play, back, next, onExit });
   keys.current = { play, back, next, onExit };
   useEffect(() => {
@@ -91,6 +102,33 @@ export function ReplayBar({
       aria-label="Replay"
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line-strong bg-raised shadow-panel"
     >
+      {steps.length > 1 && steps.length <= TRACK_MAX && (
+        <ol aria-label="Steps" className="mx-auto flex max-w-6xl items-center gap-1 overflow-x-auto px-4 pt-3 pb-0.5">
+          {steps.map((item, i) => (
+            <li key={i} className="flex shrink-0 items-center gap-1">
+              {i > 0 && (
+                <ArrowRight aria-hidden="true" className={`size-3.5 transition-colors ${i <= index ? "text-accent" : "text-faint"}`} />
+              )}
+              <button
+                type="button"
+                onClick={() => pick(i)}
+                aria-label={`Go to step ${i + 1}: ${item.title}`}
+                aria-current={i === index ? "step" : undefined}
+                title={item.sentence}
+                className={`inline-flex items-center justify-center rounded-full border text-2xs font-semibold tabular-nums transition-all ${
+                  i === index
+                    ? "size-7 border-accent bg-accent text-accent-ink ring-2 ring-accent/30"
+                    : i < index
+                      ? "size-6 border-accent bg-accent/15 text-ink hover:bg-accent/25"
+                      : "size-6 border-line-strong bg-panel text-muted hover:border-faint hover:text-ink"
+                }`}
+              >
+                {i + 1}
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
         <div className="min-w-0 flex-1 basis-80">
           <p className="flex flex-wrap items-center gap-x-2 text-2xs text-muted">
@@ -108,20 +146,10 @@ export function ReplayBar({
           <p
             key={index}
             data-motion={still ? "off" : "on"}
-            className={`mt-1 text-sm leading-snug text-ink ${still ? "" : "replay-step"}`}
+            className={`mt-1 text-base leading-snug text-ink ${still ? "" : "replay-step"}`}
           >
             {step.sentence}
           </p>
-          {step.details.length > 0 && (
-            <ul key={`details-${index}`} aria-label="In detail" className={`mt-1 space-y-0.5 text-xs text-muted ${still ? "" : "replay-step"}`}>
-              {step.details.slice(0, DETAILS_SHOWN).map((detail, i) => (
-                <li key={i}>{detail}</li>
-              ))}
-              {step.details.length > DETAILS_SHOWN && (
-                <li className="text-faint">and {step.details.length - DETAILS_SHOWN} more, in the explanation</li>
-              )}
-            </ul>
-          )}
           <p role="status" aria-live="polite" className="sr-only">
             {announce(step, index, steps.length)}
           </p>
@@ -143,11 +171,11 @@ export function ReplayBar({
           </Button>
         </div>
       </div>
-      <ol aria-hidden="true" className="flex h-1 gap-px bg-line">
-        {steps.map((_, i) => (
-          <li key={i} className={`flex-1 transition-colors ${i <= index ? "bg-accent" : "bg-transparent"}`} />
-        ))}
-      </ol>
+      {steps.length > TRACK_MAX && (
+        <div aria-hidden="true" className="h-1 bg-line">
+          <div className="h-full bg-accent transition-all" style={{ width: `${((index + 1) / steps.length) * 100}%` }} />
+        </div>
+      )}
     </section>
   );
 }

@@ -48,7 +48,7 @@ export function IncidentTimeline({
 }: {
   timeline: Timeline;
   onSelect: (event: TimelineEvent) => void;
-  /** The findings of the replay's current step: their markers are marked, the rest dimmed. */
+  /** The log lines of the replay's current step: their markers are marked, the rest dimmed. */
   current?: ReadonlySet<number> | null;
 }) {
   const full = useMemo(() => timelineRange(timeline), [timeline]);

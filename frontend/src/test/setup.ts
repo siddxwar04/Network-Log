@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { afterEach, vi } from "vitest";
 import type { TimelineChartProps } from "../components/TimelineChart";
 import type { EventsSeries } from "../lib/eventsChart";
-import { clusterOfFindings } from "../lib/timeline";
+import { clusterOfLines } from "../lib/timeline";
 
 // jsdom cannot lay out or draw a chart. The chart is replaced by a stand-in with one button
 // per incident band, so tests can still click a band. What the chart shows is tested on its
@@ -38,7 +38,7 @@ vi.mock("../components/TimelineChart", () => ({
           {
             key: cluster.key,
             type: "button",
-            "data-current": current && clusterOfFindings(cluster, current) ? "true" : undefined,
+            "data-current": current && clusterOfLines(cluster, current) ? "true" : undefined,
             onClick: () => onSelect(cluster.events[0]),
           },
           `Marker: ${cluster.kind} on ${lanes[cluster.lane]} x${cluster.events.length}`,
