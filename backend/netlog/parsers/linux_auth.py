@@ -85,13 +85,18 @@ def _closed(m):
     return _source(m, username=m["user"], reason=m["reason"] or None, extra=_invalid(m))
 
 
+# `pam_unix(sshd:auth): authentication failure; ... rhost=203.0.113.5  user=root`. Older
+# Red Hat systems name the module in the program instead (`sshd(pam_unix)[4101]:
+# authentication failure; ...`), and sshd sums up the rest of a connection's failures as
+# `PAM 4 more authentication failures; ...`. Without `user=` the name tried was not a
+# real account.
 @_SSHD.rule(
     "sshd.auth_failure",
-    r"^pam_unix\(sshd:auth\): authentication failure;.*?rhost=(?P<src>\S+)"
-    r"(?:\s+user=(?P<user>.*))?$",
+    r"^(?:pam_unix\(sshd:auth\): )?(?:PAM (?P<more>\d+) more )?authentication failures?;"
+    r".*?rhost=(?P<src>\S+)(?:\s+user=(?P<user>.*?))?\s*$",
 )
 def _pam_auth_failure(m):
-    return _source(m, username=m["user"])
+    return _source(m, username=m["user"], extra={"more": m["more"]})
 
 
 @_SUDO.rule(

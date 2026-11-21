@@ -26,12 +26,16 @@ class LineFormat(StrEnum):
     RFC5424 = "rfc5424"
     RFC3164_PRI = "rfc3164_pri"  # as sent on the wire: starts with <PRI>
     RFC3164 = "rfc3164"  # as rsyslog writes it to a file: starts with the timestamp
+    ISO = "iso"  # a file with ISO 8601 times: `2026-03-03T02:14:07.123456+00:00 host app: text`
     UNKNOWN = "unknown"
 
 
 _DETECT_5424 = re.compile(r"^<\d{1,3}>\d{1,2} ")
 _DETECT_3164_PRI = re.compile(r"^<\d{1,3}>[A-Z][a-z]{2} ")
-_DETECT_3164 = re.compile(r"^[A-Z][a-z]{2} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}")
+# Cisco ASAs and some collectors put the year after the day: `Oct 10 2018 12:34:56`.
+_DETECT_3164 = re.compile(r"^[A-Z][a-z]{2} {1,2}\d{1,2} (?:\d{4} )?\d{2}:\d{2}:\d{2}")
+# rsyslog's high-precision file format, the default in recent Debian and Ubuntu releases.
+_DETECT_ISO = re.compile(r"^(?:<\d{1,3}>)?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 
 
 def detect_format(text: str) -> LineFormat:
@@ -42,6 +46,8 @@ def detect_format(text: str) -> LineFormat:
         return LineFormat.RFC3164_PRI
     if _DETECT_3164.match(text):
         return LineFormat.RFC3164
+    if _DETECT_ISO.match(text):
+        return LineFormat.ISO
     return LineFormat.UNKNOWN
 
 
@@ -82,13 +88,24 @@ def _split_pri(pri: str | None) -> tuple[int | None, int | None] | None:
 
 _RFC3164 = re.compile(
     r"^(?:<(?P<pri>\d{1,3})>)?"
-    r"(?P<month>[A-Z][a-z]{2}) {1,2}(?P<day>\d{1,2}) "
+    r"(?P<month>[A-Z][a-z]{2}) {1,2}(?P<day>\d{1,2}) (?:(?P<year>\d{4}) )?"
     r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2})(?:\.(?P<fraction>\d{1,6}))?"
     r" (?P<host>\S+) ?(?P<rest>.*)$"
 )
 # `sshd[2417]: text` or `sudo: text`. The tag must start with a letter, which keeps the
 # message counter Cisco devices send (`1042: ...`) from being mistaken for a program.
-_TAG = re.compile(r"^(?P<app>[A-Za-z_][\w./-]*)(?:\[(?P<pid>\d+)\])?: ?(?P<message>.*)$")
+# Older Red Hat systems name the PAM module too: `sshd(pam_unix)[4101]: text`.
+_TAG = re.compile(
+    r"^(?P<app>[A-Za-z_][\w./-]*)(?:\((?P<module>[\w-]+)\))?(?:\[(?P<pid>\d+)\])?: ?"
+    r"(?P<message>.*)$"
+)
+# Infoblox appliances write their address after their name: `ib.example.com 10.0.0.1 dhcpd[7]:`.
+_HOST_ADDRESS = re.compile(r"^(?P<address>\d{1,3}(?:\.\d{1,3}){3}) (?=[A-Za-z_])")
+_ISO = re.compile(
+    r"^(?:<(?P<pri>\d{1,3})>)?"
+    r"(?P<stamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(?P<fraction>\d{1,9}))?"
+    r"(?P<zone>Z|[+-]\d{2}:?\d{2})? (?P<host>\S+) ?(?P<rest>.*)$"
+)
 
 _RFC5424 = re.compile(
     r"^<(?P<pri>\d{1,3})>(?P<version>\d{1,2}) (?P<timestamp>\S+) (?P<host>\S+) "
@@ -121,6 +138,8 @@ class SyslogParser:
             event = self._parse_5424(raw)
         elif fmt in (LineFormat.RFC3164, LineFormat.RFC3164_PRI):
             event = self._parse_3164(raw)
+        elif fmt is LineFormat.ISO:
+            event = self._parse_iso(raw)
 
         if event is None:
             return Event(line_no=raw.line_no, raw=raw.text, parse_status=ParseStatus.UNPARSED)
@@ -138,7 +157,9 @@ class SyslogParser:
 
         month = MONTHS[match["month"]]
         year = self._year
-        if self._last_month is not None and self._last_month - month >= 6:
+        if match["year"]:
+            year = int(match["year"])
+        elif self._last_month is not None and self._last_month - month >= 6:
             year += 1
         try:
             local = datetime(
@@ -154,26 +175,31 @@ class SyslogParser:
         except ValueError:  # for example Feb 31 or 25:00:00
             return None
         self._year, self._last_month = year, month
+        event = _generic(raw, local, match["host"], match["rest"], priority)
+        event.year_assumed = not match["year"]
+        return event
 
-        app = pid = None
-        message = match["rest"]
-        if tag := _TAG.match(message):
-            app, pid, message = tag["app"], tag["pid"], tag["message"].lstrip()
-
-        return Event(
-            line_no=raw.line_no,
-            raw=raw.text,
-            timestamp=local,
-            year_assumed=True,
-            tz_assumed=True,
-            host=match["host"],
-            source_type=SourceType.SYSLOG_GENERIC,
-            app=app,
-            facility=priority[0],
-            severity=priority[1],
-            message=message,
-            entities=Entities(extra={"pid": pid} if pid else {}),
-        )
+    def _parse_iso(self, raw: RawLine) -> Event | None:
+        match = _ISO.match(raw.text)
+        if not match:
+            return None
+        priority = _split_pri(match["pri"])
+        if priority is None:
+            return None
+        fraction = (match["fraction"] or "")[:6]  # Python keeps microseconds, not nanoseconds
+        zone = match["zone"] or ""
+        try:
+            when = datetime.fromisoformat(
+                match["stamp"] + (f".{fraction}" if fraction else "") + zone.replace("Z", "+00:00")
+            )
+        except ValueError:
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=self._tz)
+        event = _generic(raw, when, match["host"], match["rest"], priority)
+        event.year_assumed = False
+        event.tz_assumed = not zone
+        return event
 
     def _parse_5424(self, raw: RawLine) -> Event | None:
         match = _RFC5424.match(raw.text)
@@ -216,6 +242,36 @@ class SyslogParser:
             # placed in time, so it is kept as unparsed with whatever else was understood.
             parse_status=ParseStatus.PARSED if timestamp else ParseStatus.UNPARSED,
         )
+
+
+def _generic(
+    raw: RawLine, when: datetime, host: str, rest: str, priority: tuple[int | None, int | None]
+) -> Event:
+    """An event from a header already read: the time, the host and what follows them."""
+    extra: dict[str, str] = {}
+    # A Cisco ASA writes `host : %ASA-...`, with a space before the colon.
+    message = rest[2:] if rest.startswith(": ") else rest
+    if address := _HOST_ADDRESS.match(message):
+        if _TAG.match(message[address.end() :]):
+            extra["host_ip"], message = address["address"], message[address.end() :]
+    app = None
+    if tag := _TAG.match(message):
+        app, message = tag["app"], tag["message"].lstrip()
+        extra.update({"pid": tag["pid"], "module": tag["module"]})
+    return Event(
+        line_no=raw.line_no,
+        raw=raw.text,
+        timestamp=when,
+        year_assumed=True,
+        tz_assumed=True,
+        host=host,
+        source_type=SourceType.SYSLOG_GENERIC,
+        app=app,
+        facility=priority[0],
+        severity=priority[1],
+        message=message,
+        entities=Entities(extra={key: value for key, value in extra.items() if value}),
+    )
 
 
 def _split_structured_data(rest: str) -> tuple[dict[str, str], str] | None:

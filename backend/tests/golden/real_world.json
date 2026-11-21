@@ -1,0 +1,150 @@
+[
+  {
+    "name": "rsyslog file with ISO 8601 times (recent Debian and Ubuntu), sshd",
+    "line": "2026-03-03T02:20:11.123456+00:00 srv1 sshd[2417]: Failed password for root from 203.0.113.9 port 51522 ssh2",
+    "expect": {
+      "timestamp": "2026-03-03T02:20:11.123456Z",
+      "year_assumed": false,
+      "tz_assumed": false,
+      "host": "srv1",
+      "app": "sshd",
+      "source_type": "linux_auth",
+      "event_key": "sshd.failed_password",
+      "entities": {"src_ip": "203.0.113.9", "username": "root", "extra": {"pid": "2417"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "ISO 8601 time with a zone offset and nanoseconds, kept to microseconds",
+    "line": "2026-03-03T08:20:11.123456789+05:30 srv1 sudo: pam_unix(sudo:session): session opened for user root(uid=0) by alice(uid=1000)",
+    "expect": {
+      "timestamp": "2026-03-03T02:50:11.123456Z",
+      "tz_assumed": false,
+      "app": "sudo",
+      "event_key": "sudo.session_opened",
+      "entities": {"username": "root"}
+    }
+  },
+  {
+    "name": "ISO 8601 time with no zone: the devices' timezone is assumed",
+    "line": "2026-03-03T02:20:11.912134 srv1 sudo: pam_unix(sudo-i:session): session opened for user root by alice(uid=0)",
+    "expect": {"timestamp": "2026-03-03T02:20:11.912134Z", "tz_assumed": true, "event_key": "sudo-i.session_opened"}
+  },
+  {
+    "name": "ISO 8601 time with PRI, iptables through the kernel",
+    "line": "<6>2026-03-03T02:20:11Z gw1 kernel: [wan-lan-default-D]IN=eth0 OUT= MAC=02:00:00:00:00:01:02:00:00:00:00:02:08:00 SRC=198.51.100.15 DST=10.4.0.5 LEN=52 TOS=0x00 PREC=0x00 TTL=63 ID=0 DF PROTO=TCP SPT=443 DPT=60123 WINDOW=501 RES=0x00 ACK URGP=0",
+    "expect": {"host": "gw1", "source_type": "firewall", "entities": {"src_ip": "198.51.100.15", "dst_ip": "10.4.0.5"}}
+  },
+  {
+    "name": "older Red Hat: the PAM module is in the program name, and no user= when the name tried is not an account",
+    "line": "Jun 14 15:16:01 srv3 sshd(pam_unix)[4101]: authentication failure; logname= uid=0 euid=0 tty=NODEVssh ruser= rhost=203.0.113.4 ",
+    "expect": {
+      "app": "sshd",
+      "source_type": "linux_auth",
+      "event_key": "sshd.auth_failure",
+      "entities": {"src_ip": "203.0.113.4", "username": null, "extra": {"pid": "4101", "module": "pam_unix"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "older Red Hat PAM failure naming the user",
+    "line": "Jun 15 02:04:59 srv3 sshd(pam_unix)[4188]: authentication failure; logname= uid=0 euid=0 tty=NODEVssh ruser= rhost=203.0.113.4  user=root",
+    "expect": {"event_key": "sshd.auth_failure", "entities": {"src_ip": "203.0.113.4", "username": "root"}}
+  },
+  {
+    "name": "modern PAM failure with a trailing space and no user=",
+    "line": "Dec 10 06:55:48 srv2 sshd[5120]: pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=198.51.100.9 ",
+    "expect": {"event_key": "sshd.auth_failure", "entities": {"src_ip": "198.51.100.9", "username": null}}
+  },
+  {
+    "name": "sshd sums up the rest of a connection's PAM failures",
+    "line": "Feb 22 16:45:26 srv2 sshd[5133]: PAM 4 more authentication failures; logname= uid=0 euid=0 tty=ssh ruser= rhost=198.51.100.15  user=root",
+    "expect": {"event_key": "sshd.auth_failure", "entities": {"src_ip": "198.51.100.15", "username": "root", "extra": {"more": "4"}}}
+  },
+  {
+    "name": "Cisco ASA with the year in the header and a program tag",
+    "line": "Oct 10 2025 12:34:56 fw-log CiscoASA[999]: %ASA-4-106023: Deny tcp src outside:203.0.113.44/1772 dst inside:10.31.98.44/22 by access-group \"OUTSIDE_IN\" [0x0, 0x0]",
+    "expect": {
+      "timestamp": "2025-10-10T12:34:56Z",
+      "year_assumed": false,
+      "host": "fw-log",
+      "app": null,
+      "source_type": "firewall",
+      "event_key": "ASA-106023",
+      "entities": {"src_ip": "203.0.113.44", "dst_ip": "10.31.98.44", "port": 22, "extra": {"action": "deny", "acl": "OUTSIDE_IN"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "Cisco ASA with the year and a space before the colon after its name",
+    "line": "Apr 24 2025 16:00:28 FW-EDGE01 : %ASA-6-106100: access-list inside denied udp inside/10.29.2.101(1039) -> outside/198.51.100.10(53) hit-cnt 1 first hit [0xd820e56a, 0x0]",
+    "expect": {"host": "FW-EDGE01", "event_key": "ASA-106100", "entities": {"src_ip": "10.29.2.101", "extra": {"action": "deny"}}}
+  },
+  {
+    "name": "Cisco ASA message with its class in the code",
+    "line": "Apr 15 2025 09:34:34 FW-EDGE01 : %ASA-session-5-106100: access-list acl_in permitted tcp inside/10.1.2.16(2241) -> outside/198.51.100.89(2000) hit-cnt 1 first hit [0x71a87d94, 0x0]",
+    "expect": {"event_key": "ASA-106100", "severity": 5, "entities": {"extra": {"action": "allow"}}}
+  },
+  {
+    "name": "Cisco IOS straight from the device with its hostname (logging origin-id hostname)",
+    "line": "<190>2361044: sw01: Jan  6 2026 22:11:43.398 UTC: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down",
+    "expect": {
+      "timestamp": "2026-01-06T22:11:43.398000Z",
+      "host": "sw01",
+      "source_type": "cisco_ios",
+      "event_key": "LINK-3-UPDOWN",
+      "entities": {"interface": "GigabitEthernet0/1", "state_to": "down", "extra": {"seq": "2361044"}},
+      "parse_status": "parsed"
+    }
+  },
+  {
+    "name": "Cisco IOS with hostname and sequence numbers (service sequence-numbers)",
+    "line": "<190>3132811: sw01: 3132807: Jul 14 2026 08:23:43.398 UTC: %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up",
+    "expect": {"host": "sw01", "event_key": "LINEPROTO-5-UPDOWN", "entities": {"extra": {"seq": "3132807"}}}
+  },
+  {
+    "name": "Cisco IOS straight from the device with an empty counter",
+    "line": "<189>: Jan  6 2026 20:54:26.961: %SYS-5-CONFIG_I: Configured from console by netadmin on vty0 (10.100.11.10)",
+    "expect": {"timestamp": "2026-01-06T20:54:26.961000Z", "host": null, "event_key": "SYS-5-CONFIG_I", "entities": {"username": "netadmin", "src_ip": "10.100.11.10"}}
+  },
+  {
+    "name": "Cisco IOS through a relay that kept the device's name as a tag",
+    "line": "<190>Jul 14 08:23:43 192.168.100.2 sw01: 3132779: Jul 14 2026 08:23:43.398 UTC: %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to up",
+    "expect": {"host": "sw01", "app": null, "source_type": "cisco_ios", "event_key": "LINK-3-UPDOWN", "timestamp": "2026-07-14T08:23:43.398000Z"}
+  },
+  {
+    "name": "Cisco switch stack member in the facility",
+    "line": "Mar 24 17:37:39 192.168.100.2 1991221: Mar 24 17:37:39 UTC: %PIM-SW1-6-INVALID_RP_JOIN: Received (*, 10.36.2.78) Join from 10.4.5.66 for invalid RP 10.3.66.3",
+    "expect": {"source_type": "cisco_ios", "event_key": "PIM-SW1-6-INVALID_RP_JOIN", "severity": 6}
+  },
+  {
+    "name": "Infoblox: the appliance's address after its name, dhcpd with TransID and uid",
+    "line": "<30>Mar 27 08:32:59 ib.example.com 10.0.0.1 dhcpd[7024]: DHCPDISCOVER from 02:50:56:83:6c:a0 via eth3 TransID b5e92c59 uid 01:02:50:56:83:6c:a0",
+    "expect": {"host": "ib.example.com", "app": "dhcpd", "event_key": "dhcp.discover", "entities": {"mac": "02:50:56:83:6c:a0", "interface": "eth3", "extra": {"host_ip": "10.0.0.1"}}}
+  },
+  {
+    "name": "Infoblox: no free leases after the TransID",
+    "line": "<30>Mar 27 08:32:59 10.0.0.1 dhcpd[2750]: DHCPDISCOVER from 02:50:56:83:d0:f6 via eth1 TransID 6214ab45: network 10.50.0.0/20: no free leases",
+    "expect": {"event_key": "dhcp.no_free_leases", "entities": {"mac": "02:50:56:83:d0:f6", "extra": {"network": "10.50.0.0/20"}}}
+  },
+  {
+    "name": "Infoblox: ACK through a relay, with the lease time, a renewal and the uid",
+    "line": "<30>Mar 27 08:32:59 10.0.0.1 dhcpd[2750]: DHCPACK on 10.50.0.7 to 02:50:56:83:d0:f6 via eth1 relay 10.50.0.1 lease-duration 600 (RENEW) uid 01:02:50:56:83:d0:f6",
+    "expect": {"event_key": "dhcp.ack", "entities": {"dst_ip": "10.50.0.7", "extra": {"relay": "10.50.0.1"}}}
+  },
+  {
+    "name": "Infoblox: the question and the answer in one line, read as an answer",
+    "line": "<30>Mar 11 23:51:31 ib.example.com named[11042]: 07-Apr-2026 08:08:10.043 client 192.168.0.1#57398 UDP: query: missing.example.com IN A response: NXDOMAIN +ED",
+    "expect": {"source_type": "dns", "event_key": "dns.reply", "entities": {"src_ip": "192.168.0.1", "extra": {"qname": "missing.example.com", "qtype": "A", "rcode": "NXDOMAIN"}}}
+  },
+  {
+    "name": "Infoblox: a refused question",
+    "line": "<45>Mar 11 23:51:31 ib.example.com named[17742]: 07-Apr-2026 08:08:10.043 client 192.168.0.1#50565 UDP: query: example.org IN A response: REFUSED -",
+    "expect": {"event_key": "dns.reply", "entities": {"extra": {"rcode": "REFUSED", "qname": "example.org"}}}
+  },
+  {
+    "name": "a program name with a pid and no Cisco message stays a program",
+    "line": "Oct 10 2025 12:34:56 srv1 cron[999]: (root) CMD (run-parts /etc/cron.hourly)",
+    "expect": {"host": "srv1", "app": "cron", "event_key": null}
+  }
+]

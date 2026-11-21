@@ -27,11 +27,20 @@ from netlog.schema import (
     normalize_interface,
 )
 
-# [counter: ][device timestamp: ]%FACILITY-SEVERITY-MNEMONIC: text
+# [counter: ][hostname: ][counter: ][device timestamp: ]%FACILITY-SEVERITY-MNEMONIC: text
+#
+# A device sending straight to a collector puts its message counter first, sometimes empty
+# (`<189>: ...`); with `logging origin-id hostname` its name follows, and with `service
+# sequence-numbers` a second counter. The facility can have more than one part: a switch
+# in a stack names its member (`%PIM-SW1-6-...`), and an ASA can name the message's class
+# (`%ASA-session-5-106100`).
 _BODY = re.compile(
-    r"^(?:(?P<seq>\d+): )?"
+    r"^(?:(?P<seq0>\d+)?: )?"
+    r"(?:(?P<origin>[A-Za-z][\w.-]*): )?"
+    r"(?:(?P<seq>\d+): )?"
     r"(?:(?P<stamp>[^%]+?): )?"
-    r"%(?P<facility>[A-Z][A-Z0-9_]*)-(?P<severity>[0-7])-(?P<mnemonic>[A-Z0-9_]+): ?"
+    r"%(?P<facility>[A-Z][A-Z0-9_]*(?:-[A-Za-z][A-Za-z0-9_]*)*)-(?P<severity>[0-7])-"
+    r"(?P<mnemonic>[A-Z0-9_]+): ?"
     r"(?P<text>.*)$"
 )
 _PRI = re.compile(r"^<(?P<pri>\d{1,3})>(?P<rest>.*)$")
@@ -281,7 +290,16 @@ class CiscoParser:
         if event.parse_status is ParseStatus.UNPARSED:
             return self._parse_headerless(event)
         if event.app is not None:
-            return event
+            # `sw01: 1042: Jul 14 ...: %SYS-...` reads like a program called sw01: it is the
+            # device's own name, sent with `logging origin-id hostname`. A program with a
+            # process id that logs Cisco messages (`CiscoASA[999]: %ASA-...`) keeps its host.
+            body = _BODY.match(event.message)
+            if not body or body["origin"]:
+                return event
+            if not event.entities.extra.get("pid"):
+                event.host = event.app
+            event.app = None
+            event.entities.extra.pop("pid", None)
         body = _BODY.match(event.message)
         if not body:
             return event
@@ -307,6 +325,7 @@ class CiscoParser:
             line_no=event.line_no,
             raw=event.raw,
             timestamp=time.timestamp,
+            host=body["origin"],
             facility=facility,
         )
         self._fill(parsed, body, time)
@@ -325,7 +344,9 @@ class CiscoParser:
             event.year_assumed = time.year_assumed
             event.tz_assumed = time.tz_assumed
 
-        extra = _clean({"seq": body["seq"], "clock": time.clock})
+        if body["origin"] and event.host is None:
+            event.host = body["origin"]
+        extra = _clean({"seq": body["seq"] or body["seq0"], "clock": time.clock})
         if time.clock:
             extra["device_time"] = body["stamp"]
 

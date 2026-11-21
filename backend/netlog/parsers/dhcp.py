@@ -20,7 +20,14 @@ PROGRAMS = ("dhcpd",)
 _DHCPD = PatternSet()
 
 _CLIENT = r"(?P<mac>\S+)(?: \((?P<hostname>.*)\))?"
-_VIA = r" via (?P<via>\S+?)"
+# Infoblox appliances add fields after the interface: `via eth3 TransID a76ecf84 uid 01:...`,
+# `via eth1 relay 10.0.0.2 lease-duration 600 offered-duration 600 (RENEW) uid ...`. Only
+# a relay that is an address is kept; Infoblox also names the local interface there.
+_VIA = (
+    r" via (?P<via>\S+?)"
+    r"(?: TransID \S+?| relay (?P<relay>\S+?)| (?:lease|offered)-duration \d+| uid \S+?"
+    r"| \((?:RENEW|REBIND|INIT|SELECTING|INIT-REBOOT|REBOOT)\))*"
+)
 _TAIL = r"(?:: (?P<tail>.*))?$"
 
 
@@ -30,6 +37,8 @@ def _fields(match, **extra) -> dict:
     interface = via
     if via and is_ip(via):  # the request came through a relay agent, not a local interface
         extra["relay"], interface = via, None
+    elif groups.get("relay") and is_ip(groups["relay"]):
+        extra["relay"] = groups["relay"]
     extra["hostname"] = groups.get("hostname")
     return {
         "protocol": "dhcp",

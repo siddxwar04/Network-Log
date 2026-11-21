@@ -36,7 +36,8 @@ from netlog.schema import Entities, Event, ParseStatus, SourceType
 
 # --- Cisco ASA ------------------------------------------------------------------------------
 
-_ASA_KEY = re.compile(r"^(?:ASA|FTD)-[0-7]-(?P<id>\d{6})$")
+# `ASA-4-106023`, or with the message's class: `ASA-session-5-106100`.
+_ASA_KEY = re.compile(r"^(?:ASA|FTD)(?:-[a-z]+)?-[0-7]-(?P<id>\d{6})$")
 
 # `outside:203.0.113.5/40000`, with the optional identity or FQDN that follows in brackets.
 _END = (

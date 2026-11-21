@@ -31,6 +31,21 @@ The schema is defined in `backend/netlog/schema.py`.
 | `source_type` | No (default `unknown`) | The kind of log: `cisco_ios`, `linux_auth`, `dhcp`, `firewall`, `dns`, `syslog_generic` or `unknown` | `cisco_ios` |
 | `app` | No | The program or syslog tag that wrote the line | `sshd` |
 
+### Header formats
+
+The header gives the time, the host and the program. These forms are read:
+
+| Form | Example | Year and timezone |
+|---|---|---|
+| RFC 3164, as a collector writes it to a file | `Mar  3 02:14:07 R1 sshd[2417]: ...` | Both assumed |
+| RFC 3164 as sent on the wire, with `<PRI>` | `<34>Mar  3 02:14:07 R1 ...` | Both assumed |
+| RFC 3164 with a year after the day, as Cisco ASAs and some collectors write it | `Oct 10 2026 12:34:56 FW1 : %ASA-...` | Timezone assumed. The year carries over to later lines that have none |
+| RFC 5424 | `<165>1 2026-03-03T02:14:07.123Z R1 app 42 ID47 - message` | Neither |
+| ISO 8601 times, rsyslog's high-precision format and the default in recent Debian and Ubuntu releases | `2026-03-03T02:14:07.123456+00:00 srv1 sshd[2417]: ...` | Timezone assumed only when the time has no offset |
+| A Cisco line straight from the device, with no collector header | `<189>42: R1: Mar  3 02:14:07.123: %...` | See Cisco IOS events |
+
+The program tag is `name[pid]:` or `name:`. Older Red Hat systems also name the PAM module, `sshd(pam_unix)[4101]:`; the program is then `sshd` and the module goes into `extra.module`. An ASA writes a space before the colon after its name (`FW1 : %ASA-...`), and an Infoblox appliance writes its address after its name (`ib1 10.0.0.1 dhcpd[7]:`), kept in `extra.host_ip`.
+
 ### Classification
 
 | Field | Required | Meaning | Example |
@@ -128,11 +143,15 @@ When the collector time is used, the device's original text is kept in `entities
 
 A device time has no year unless the device is configured to print one. The year is chosen so that the device time lands closest to the collector time, which handles a line logged at `Dec 31 23:59:59` and collected at `Jan  1 00:00:00`.
 
-A line that comes straight from a device with no collector header (`<189>42: Mar  3 02:14:07.123: %...`) has only the device time, so that is used whatever its state.
+A line that comes straight from a device with no collector header (`<189>42: Mar  3 02:14:07.123: %...`) has only the device time, so that is used whatever its state. Such a line may also carry the device's name (`logging origin-id hostname`) and a second counter (`service sequence-numbers`): `<190>42: sw01: 1040: Mar  3 02:14:07.123: %...`. The name becomes the `host`, and `seq` is the second counter. The first counter can be empty (`<189>: Mar  3 ...`). When a collector keeps the name as if it were a program (`Mar  3 02:14:07 10.0.0.5 sw01: 1040: ...`), the name is still taken as the host.
+
+A line with only an uptime (`2y10w: %SYS-...`) and no collector header cannot be placed in time, so it stays unparsed.
 
 ### Severity
 
 The digit in the message code is the severity (`%LINK-3-UPDOWN` is severity 3). When a line also has a `<PRI>` prefix that disagrees, the message code wins.
+
+The facility can have more than one part: a switch in a stack names its member (`%PIM-SW1-6-INVALID_RP_JOIN`), and the whole code is the event key.
 
 ### Extra values
 
@@ -165,7 +184,7 @@ Lines from `sshd`, `sudo` and `cron` get the source type `linux_auth`.
 | `sshd.invalid_user` | `Invalid user ... from ...` | `username`, `src_ip`, `port` |
 | `sshd.connection_closed` | `Connection closed by ...`, `Disconnected from ...`, `Disconnecting ...` | `username`, `src_ip`, `port`, `reason` |
 | `sshd.max_auth_attempts` | `maximum authentication attempts exceeded for ...` | `username`, `src_ip`, `port` |
-| `sshd.auth_failure` | `pam_unix(sshd:auth): authentication failure; ...` | `username`, `src_ip` |
+| `sshd.auth_failure` | `pam_unix(sshd:auth): authentication failure; ... rhost=<src> user=<name>`, the older `sshd(pam_unix)[pid]: authentication failure; ...`, and `PAM 4 more authentication failures; ...`. With no `user=`, the name tried is not an account | `username`, `src_ip` |
 | `sshd.session_opened`, `sshd.session_closed` | `pam_unix(sshd:session): session opened for user ...` | `username`, `state_to` |
 | `cron.session_opened`, `cron.session_closed` | The same, from cron | `username`, `state_to` |
 | `sudo.command` | `bob : TTY=... ; PWD=... ; USER=root ; COMMAND=...` | `username` |
@@ -180,6 +199,8 @@ Lines from `sshd`, `sudo` and `cron` get the source type `linux_auth`.
 | `src_host` | The source, when sshd logged a hostname and not an address. `src_ip` is then empty |
 | `target_user`, `command`, `tty` | For sudo: who the command ran as, the command, and the terminal |
 | `attempts` | For `sudo.auth_failure`: the number of wrong passwords |
+| `more` | For `PAM n more authentication failures`: the n |
+| `module` | The PAM module named in an older Red Hat tag, `sshd(pam_unix)` |
 
 A username is whatever the person logging in typed. It can contain spaces or text that imitates the rest of the message, such as `admin from 10.0.0.1 port 22`. The address and port that sshd appends are always at the end of the line, so they are read from the end and the username takes whatever is left.
 
@@ -206,6 +227,8 @@ Lines from `dhcpd` get the source type `dhcp`. In these events `mac` is the clie
 | `relay` | The relay agent's address, when the request did not arrive on a local interface. `interface` is then empty |
 | `lease` | For `dhcp.release`: `found` or `not found` |
 
+Infoblox appliances add fields after the interface (`TransID`, `relay`, `lease-duration`, `offered-duration`, `(RENEW)`, `uid`). They are read past; only a relay that is an address is kept, in `extra.relay`.
+
 A line from one of these programs with a message that matches no pattern is still an event with the right source type. It has no event key.
 
 ## Firewall events
@@ -223,7 +246,7 @@ Cisco ASA messages and Linux iptables (and UFW) packet logs get the source type 
 
 ### Cisco ASA
 
-The event key is `ASA-` and the message number, **without the severity**: `%ASA-4-106023` becomes `ASA-106023`. An ASA administrator can change the level of any message, and a rule should not stop matching when they do. The level is still in `severity`. Firepower Threat Defense (`%FTD-`) uses the same numbers and gets the same keys.
+The event key is `ASA-` and the message number, **without the severity**: `%ASA-4-106023` becomes `ASA-106023`, and so does a code with the message's class, `%ASA-session-4-106023`. An ASA administrator can change the level of any message, and a rule should not stop matching when they do. The level is still in `severity`. Firepower Threat Defense (`%FTD-`) uses the same numbers and gets the same keys.
 
 | Event key | Message | Entities |
 |---|---|---|
@@ -257,9 +280,10 @@ Lines from BIND (`named`) and `dnsmasq` get the source type `dns`.
 | Event key | Meaning | Lines |
 |---|---|---|
 | `dns.query` | A client asked a question | BIND: `client @0x... <ip>#<port> (<name>): query: <name> IN <type> <flags> (<server>)`; dnsmasq: `query[<type>] <name> from <ip>` |
-| `dns.reply` | The server answered | dnsmasq: `reply\|cached\|config <name> is <answer>`; BIND 9.20.3 and later with `responselog yes;`: `... response: <name> IN <type> <rcode> ...` |
+| `dns.reply` | The server answered | dnsmasq: `reply\|cached\|config <name> is <answer>`; BIND 9.20.3 and later with `responselog yes;`: `... response: <name> IN <type> <rcode> ...`; Infoblox NIOS, the question and the answer in one line: `client <ip>#<port> UDP: query: <name> IN <type> response: <rcode> ...` |
 | `dns.query_failed` | The server could not answer | BIND's query-errors category: `... query failed (<reason>) for <name>/IN/<type> at ...` |
 | `dns.forwarded` | The question was passed on | dnsmasq: `forwarded <name> to <server>` |
+| `dns.upstream_error` | BIND could not reach a server it asked on a client's behalf | BIND: `<error> resolving '<name>/<type>/IN': <server>#<port>`, for example `network unreachable` or `timed out`; the server is in `dst_ip` and the error in `reason` |
 
 `src_ip` is the client that asked. `extra.qname` is the name asked for and `extra.qtype` the record type. An answer carries `extra.rcode`: `NOERROR`, `NXDOMAIN` (the name does not exist), `SERVFAIL`, `REFUSED` or `TIMEOUT`; a dnsmasq answer that is an address keeps it in `extra.answer`, and NODATA counts as `NOERROR`.
 
