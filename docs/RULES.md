@@ -6,11 +6,12 @@ Rules are data, not code. They live in `backend/netlog/config/rules.toml`, and t
 
 ## How a rule works
 
-A rule looks at events of certain types, groups them (for example by device and interface), and produces a **finding** when its condition is met. There are three kinds of rule.
+A rule looks at events of certain types, groups them (for example by device and interface), and produces a **finding** when its condition is met. There are four kinds of rule.
 
 | Kind | Condition | Example |
 |---|---|---|
-| `threshold` | At least N matching events for one group within a time window | 5 link-downs on one interface in 5 minutes |
+| `threshold` | At least N matching events for one group within a time window, or with `count_distinct`, at least N different values of one field | 5 link-downs on one interface in 5 minutes; 25 different ports from one address in a minute |
+| `share` | Matching events make up at least a given share of another kind of event, and number at least N, within a window | 20% of DNS queries failing, at least 20 failures, in 5 minutes |
 | `sequence` | One event, then another for the same group within a time limit | A login, then a config change from the same address |
 | `absence` | An event that is not followed by its counterpart in time | An interface going down and not coming back within 30 seconds |
 
@@ -32,6 +33,10 @@ One problem gives one finding. An interface that flaps for half an hour is a sin
 | `device_reload` | A reload being requested | Any request | High |
 | `device_restart` | A device starting up | Any restart | Critical |
 | `mac_flapping` | A MAC address moving between ports | 3 warnings in one VLAN in 5 minutes | High |
+| `port_scan` | One address trying many ports, refused | 25 different ports in 1 minute | Medium; High if a connection from it is then let through |
+| `port_sweep` | One address trying one port on many machines, refused | 20 different addresses in 1 minute | Medium |
+| `dns_failure_spike` | A DNS server failing to answer | 20% of queries and at least 20 failures in 5 minutes | Medium; High at half the queries or more |
+| `dns_nxdomain_burst` | One machine looking up many names that do not exist | 50 different names in 5 minutes | Medium |
 
 ## Severity
 
@@ -280,9 +285,88 @@ Interface names must be written in their long form.
 
 ---
 
+## Firewall
+
+### port_scan
+
+**Detects:** one address trying many different ports and being refused: someone mapping which services are open.
+
+| | |
+|---|---|
+| Log signature | Denied connections: Cisco ASA `106001`, `106006`, `106007`, `106010`, `106015`, `106021`, `106023`, `106100` (denied), iptables or UFW lines whose prefix says BLOCK, DROP, DENY or REJECT |
+| Trigger | 25 or more **different destination ports** from one source address within 1 minute. Retries to the same port count once |
+| Severity | Medium. High when a connection from the same address is let through within the next hour (ASA `302013`, `302015`, iptables ALLOW) |
+| Recorded | Ports tried, how many machines and firewalls saw it, the protocol and the most-tried address |
+
+**Usual causes:** scanning tools run by attackers, researchers or search engines for exposed devices; your own vulnerability scanner or monitoring.
+
+**Can be wrong when:** a legitimate program opens many connections on different ports (some peer-to-peer and media software, passive FTP through a firewall that does not inspect it). Check who owns the address before acting.
+
+**Not covered:** a slow scan spread over hours (fewer than 25 ports in any one minute), and scans spread across many source addresses. Connections the firewall allowed are only used for the High level, never counted as part of the scan.
+
+### port_sweep
+
+**Detects:** one address trying the same port on many different machines and being refused: someone looking for every host that runs one service.
+
+| | |
+|---|---|
+| Log signature | The same denied-connection messages as `port_scan` |
+| Trigger | 20 or more **different destination addresses** on one port from one source within 1 minute |
+| Severity | Medium |
+| Recorded | Addresses tried, the firewalls that saw it, the protocol |
+
+**Usual causes:** worms and scanners looking for one exposed service (SMB on 445, RDP on 3389, Telnet on 23).
+
+**Can be wrong when:** a monitoring or inventory system checks one port on every machine, or a misconfigured client tries every address in a range.
+
+Both rules belong to the incident type `port_scan`, so a scan and a sweep from the same address are one incident.
+
+---
+
+## DNS
+
+### dns_failure_spike
+
+**Detects:** a DNS server failing to answer a large share of the questions it is asked, so names stop resolving for everyone who uses it.
+
+| | |
+|---|---|
+| Log signature | Failures: BIND `query failed (SERVFAIL\|REFUSED\|timed out)` (query-errors category), dnsmasq `reply ... is SERVFAIL\|REFUSED`. Queries: BIND `query:` lines, dnsmasq `query[...]` lines |
+| Trigger | On one server within 5 minutes: at least 20 failures, and failures at least 20% of the queries |
+| Severity | Medium. High when at least half the queries failed |
+| Recorded | Failures, queries in the same stretch, the share, the clients and names affected, the commonest failure code |
+
+A name that does not exist (NXDOMAIN) is an answer, not a failure, and is not counted. When the server does not log its queries, the failures are taken as the whole, which makes the share 100%.
+
+**Usual causes:** the resolver losing its connection to the internet or to the servers it forwards to, a firewall blocking port 53, a broken forwarder setting, or one popular domain whose own servers are down.
+
+**Can be wrong when:** a single client floods the server with questions about one broken name. Check how many different names and clients failed.
+
+**Not covered:** failures that only the clients see (a server that is down logs nothing), and slow answers that do not fail.
+
+### dns_nxdomain_burst
+
+**Detects:** one machine looking up many different names that do not exist, which is how some malware searches for its control server among names it invents. A misconfigured program can do the same.
+
+| | |
+|---|---|
+| Log signature | dnsmasq `reply <name> is NXDOMAIN` with `log-queries=extra` (which names the client on each answer); BIND 9.20.3 and later with `responselog yes;` |
+| Trigger | 50 or more **different names** answered NXDOMAIN to one client within 5 minutes. The same missing name asked again counts once |
+| Severity | Medium |
+| Recorded | How many different names, and which servers answered |
+
+**Usual causes:** malware using a domain generation algorithm; a program with a wrong search domain trying many combinations; a broken script.
+
+**Can be wrong when:** a security tool or a mail server checks many names on purpose (blocklist lookups).
+
+**Not covered:** BIND before 9.20.3, and dnsmasq without `log-queries=extra`, do not name the client on an answer, so this rule cannot see them.
+
+---
+
 ## Known gaps
 
 - **No topology knowledge.** Importance comes only from the critical lists in your settings.
 - **One line at a time.** Messages that span several lines are read line by line.
 - **Formats checked against generated logs only.** `SYS-3-CPUHOG`, `SYS-2-MALLOCFAIL` and `SW_MATM-4-MACFLAP_NOTIF` have been tested against hand-written examples, not logs from a device.
-- **Cisco IOS, Linux sshd and ISC dhcpd only.**
+- **Cisco IOS and ASA, Linux sshd, iptables and UFW, ISC dhcpd, BIND and dnsmasq only.**
+- **Firewall and DNS formats checked against vendor documentation and source, not against logs from real devices.** ASA 106010 and 106014 could only be checked against a partial template.

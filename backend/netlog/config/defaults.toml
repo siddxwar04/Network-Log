@@ -75,7 +75,7 @@ many_devices = 3
 # Kinds of finding that are about people, not the network. A security finding and a
 # network finding are only put together when they share an address, never because they
 # merely happened on the same device at the same time.
-security_types = ["brute_force"]
+security_types = ["brute_force", "port_scan", "dns_nxdomain_burst"]
 # When working out which address belongs to which device from the logs alone: the share
 # of an address's adjacency events that a device must have an event of its own beside.
 owner_min_support = 0.5

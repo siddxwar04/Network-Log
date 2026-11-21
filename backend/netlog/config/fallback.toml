@@ -32,6 +32,8 @@ brute_force_login = "brute_force"
 cpu_hog = "resource_exhaustion"
 memory_allocation_failure = "resource_exhaustion"
 device_restart = "device_reload"
+port_sweep = "port_scan"
+dns_failure_spike = "dns_failure"
 
 [template.default]
 meaning = "The tool has no specific guidance for this kind of incident, so the checks below are general ones."
@@ -236,3 +238,52 @@ commands = [
     { command = "show logging | include MACFLAP", purpose = "No new MAC flapping messages." },
 ]
 unknowns = ["What joins the two ports. Logs show the address moving, not the cabling."]
+
+[template.port_scan]
+meaning = "One address tried many ports or many machines and the firewall refused it: someone was mapping which services are reachable, which often comes before an attack."
+terms = "A port is the number that tells a machine which service a connection is for, such as 22 for SSH or 443 for HTTPS; a port scan tries many of them to see which ones answer."
+impact = "Nothing, as long as every attempt was refused: a blocked scan only tells the scanner what is closed. Anything it found open is now a known target."
+checks = [
+    { text = "Confirm that every connection from {entity} was refused, and look for any that the firewall let through.", why = "A refused scan costs nothing; an allowed connection from the same address is the one to follow up.", changes = false },
+    { text = "Check which of the ports that were tried are open on purpose, and whether they need to be reachable from where {entity} is.", why = "The scan shows what an attacker will try next, so anything open that need not be is worth closing.", changes = false },
+    { text = "Look up who owns {entity}, and whether it is one of your own scanners or monitoring systems.", why = "Authorized scanners and vulnerability tests look exactly like this in the logs.", changes = false },
+    { text = "Block {entity} at the edge if the scan continues or comes back.", why = "This stops the noise from that address, though a scanner can move to another one.", changes = true },
+]
+commands = [
+    { command = "show access-list", purpose = "On a Cisco ASA: the deny entries counting the scan, and no permit entry matching the scanning address." },
+    { command = "show conn address {entity}", purpose = "On a Cisco ASA: no open connection from the scanning address." },
+    { command = "iptables -L -n -v", purpose = "On a Linux firewall: the dropping rule's counter rose with the scan, and no accepting rule matches the address." },
+]
+unknowns = ["Whether anything answered. A firewall logs what it refused and allowed, not what the machines behind it replied."]
+
+[template.dns_failure]
+meaning = "A DNS server stopped answering a large share of the questions it was asked, so names stopped resolving for every machine that uses it."
+terms = "DNS turns names such as example.com into addresses. SERVFAIL means the server could not get an answer, usually because it could not reach the servers above it; REFUSED means it would not answer."
+impact = "Anything that looked up a name through {device} failed or waited, which looks to users like the network or the internet being down even when it is not."
+checks = [
+    { text = "Check whether {device} can reach the servers it forwards to, or the internet's root servers if it resolves on its own.", why = "Most failure spikes on a resolver come from losing its own way out, not from a fault in the server itself.", changes = false },
+    { text = "Look at whether the failures are for every name or only for one domain.", why = "Failures for one domain point at that domain's own servers; failures for everything point at the resolver or its link.", changes = false },
+    { text = "Look for a configuration change, a firewall change or a restart on {device} shortly before the failures began.", why = "A changed forwarder or a blocked port 53 gives exactly this pattern.", changes = false },
+    { text = "Point clients at a second resolver while this one is fixed, if there is one.", why = "Names resolve again at once, but every client's settings change.", changes = true },
+]
+commands = [
+    { command = "dig @{device} example.com", purpose = "Status NOERROR with an answer, not SERVFAIL." },
+    { command = "rndc status", purpose = "On BIND: the server is running and not reporting errors." },
+    { command = "nslookup example.com", purpose = "From a client: the name resolves through the usual server." },
+]
+unknowns = ["Why the server could not answer. Its query log shows that it failed, not what went wrong between it and the servers above it."]
+
+[template.dns_nxdomain_burst]
+meaning = "One machine looked up many different names that do not exist. Some malware does this to find its control server among names it invents; a misconfigured program can do the same."
+terms = "NXDOMAIN is the DNS answer for a name that does not exist. Names that look random, such as qx7vt2kd.com, are the usual sign of malware generating them."
+impact = "None to the network itself. The machine at {entity} may be infected, and it is the one to look at."
+checks = [
+    { text = "Look at the names {entity} asked for: random-looking names point at malware, misspelled or internal names at a misconfigured program.", why = "The shape of the names separates the two causes better than their number does.", changes = false },
+    { text = "Find which machine and which user have the address {entity}, and which program sent the lookups.", why = "The address is all the logs give; the machine itself shows which process made the requests.", changes = false },
+    { text = "Run a malware scan on that machine.", why = "If the names look generated, the scan is how to confirm it.", changes = false },
+    { text = "Isolate the machine from the network if the scan finds malware.", why = "This cuts it off from its control server and from other machines, and its user from their work.", changes = true },
+]
+commands = [
+    { command = "grep {entity} /var/log/dnsmasq.log", purpose = "On the DNS server: the names asked for, to judge whether they look random." },
+]
+unknowns = ["Which program on the machine made the lookups. DNS logs show the machine's address, not the process."]

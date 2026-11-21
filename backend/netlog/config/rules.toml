@@ -279,3 +279,104 @@ distinct = ["mac"]
 capture = ["interface", "extra.second_interface"]
 severity = "high"
 severity_because = "a switching loop can flood a whole VLAN within seconds"
+
+
+# --- Firewall -----------------------------------------------------------------------------
+
+[[rule]]
+name = "port_scan"
+incident_type = "port_scan"
+description = "One address tried many different ports and was blocked: someone mapping which services are open."
+kind = "threshold"
+title = "Port scan from {src_ip}: {distinct_port} ports tried in {duration}"
+# Denied connections only, from a Cisco ASA or a Linux firewall. One address being refused
+# on two or three ports is everyday background noise on the internet.
+event_keys = ["ASA-106001", "ASA-106006", "ASA-106007", "ASA-106010", "ASA-106015", "ASA-106021", "ASA-106023", "ASA-106100", "iptables.deny"]
+where = { "extra.action" = "deny" }
+group_by = ["src_ip"]
+window_seconds = 60
+# Different destination ports in one window, not attempts: retries to one port do not count.
+count_distinct = "port"
+threshold = 25
+strong_at = 4.0
+distinct = ["dst_ip", "host"]
+capture = ["protocol", "dst_ip"]
+severity = "medium"
+severity_because = "a blocked scan does no harm by itself, but it is often the first step of an attack"
+severity_when = [
+    { flag = "let_through", level = "high", because = "a connection from the same address was let through afterwards" },
+]
+
+# A connection from the scanning address that the firewall allowed, after the scan.
+[rule.followed_by]
+flag = "let_through"
+event_keys = ["ASA-302013", "ASA-302015", "iptables.allow"]
+same = ["src_ip"]
+within_seconds = 3600
+
+[[rule]]
+name = "port_sweep"
+incident_type = "port_scan"
+description = "One address tried the same port on many different machines and was blocked: someone looking for every host that runs one service."
+kind = "threshold"
+title = "Port sweep from {src_ip}: port {port} tried on {distinct_dst_ip} addresses in {duration}"
+event_keys = ["ASA-106001", "ASA-106006", "ASA-106007", "ASA-106010", "ASA-106015", "ASA-106021", "ASA-106023", "ASA-106100", "iptables.deny"]
+where = { "extra.action" = "deny" }
+group_by = ["src_ip", "port"]
+window_seconds = 60
+count_distinct = "dst_ip"
+threshold = 20
+strong_at = 4.0
+distinct = ["host"]
+capture = ["protocol"]
+severity = "medium"
+severity_because = "a blocked sweep does no harm by itself, but it is often the first step of an attack"
+
+
+# --- DNS ----------------------------------------------------------------------------------
+
+[[rule]]
+name = "dns_failure_spike"
+incident_type = "dns_failure"
+description = "A DNS server failed to answer a large share of the questions it was asked, so names stop resolving for everyone who uses it."
+kind = "share"
+title = "{percent}% of DNS queries failed on {host} ({count} of {total}) in {duration}"
+# Failed answers: the server could not get an answer (SERVFAIL), refused to give one
+# (REFUSED) or gave up waiting (TIMEOUT). A name that does not exist (NXDOMAIN) is an
+# answer, not a failure.
+event_keys = ["dns.reply", "dns.query_failed"]
+where = { "extra.rcode" = ["SERVFAIL", "REFUSED", "TIMEOUT"] }
+# ... as a share of the questions asked.
+of = { event_keys = ["dns.query"] }
+group_by = ["host"]
+window_seconds = 300
+# At least this many failures in the window, and at least this share of the queries.
+threshold = 20
+share = 0.2
+# Full strength when half the queries fail.
+strong_at = 2.5
+distinct = ["src_ip", "extra.qname"]
+capture = ["extra.rcode"]
+severity = "medium"
+severity_because = "when a DNS server fails, everything that looks up a name through it fails too"
+severity_when = [
+    { strength_at_least = 1.0, level = "high", because = "at least half of the queries failed" },
+]
+
+[[rule]]
+name = "dns_nxdomain_burst"
+incident_type = "dns_nxdomain_burst"
+description = "One machine looked up many different names that do not exist, which is how some malware searches for its control server; a misconfigured program can do the same."
+kind = "threshold"
+title = "{src_ip} looked up {distinct_qname} names that do not exist in {duration}"
+# Needs the client address on each answer: dnsmasq with log-queries=extra.
+event_keys = ["dns.reply"]
+where = { "extra.rcode" = "NXDOMAIN" }
+group_by = ["src_ip"]
+window_seconds = 300
+count_distinct = "extra.qname"
+threshold = 50
+strong_at = 4.0
+distinct = ["host"]
+severity = "medium"
+severity_because = "it may be malware on that machine, or only a misconfigured program"

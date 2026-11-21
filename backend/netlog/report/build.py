@@ -34,6 +34,10 @@ RULE_LABELS = {
     "device_reload": "Reload requested",
     "device_restart": "Device restarted",
     "mac_flapping": "MAC addresses flapping",
+    "port_scan": "Port scan",
+    "port_sweep": "Port sweep",
+    "dns_failure_spike": "DNS failures",
+    "dns_nxdomain_burst": "Lookups of names that do not exist",
 }
 
 

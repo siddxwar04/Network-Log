@@ -31,6 +31,9 @@ _ENTITY_FIELDS = {
     "config_change": "username",
     "bgp_session_down": "neighbor_ip",
     "ospf_adjacency_loss": "neighbor_ip",
+    "port_scan": "src_ip",
+    "port_sweep": "src_ip",
+    "dns_nxdomain_burst": "src_ip",
 }
 
 HostHasLogs = Callable[[str, datetime, datetime], bool]
