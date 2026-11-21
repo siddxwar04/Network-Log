@@ -200,6 +200,17 @@
   animation: cite-flash 1.2s ease-out;
 }
 
+/* Each step of the incident replay fades in from just below, so the change is seen. */
+@keyframes replay-step {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.replay-step {
+  animation: replay-step 0.35s ease-out;
+}
+
 /* A screen settles in instead of snapping: short, and only opacity and a few pixels. */
 @keyframes settle {
   from {

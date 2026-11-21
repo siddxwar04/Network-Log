@@ -105,6 +105,7 @@ export const HEALTH: Health = {
   redaction: { enabled: true },
   demo: { active: true, stored_explanations: 0 },
   max_upload_bytes: 50 * 1024 * 1024,
+  replay: { step_seconds: 4 },
   stages: ["queued", "parsing", "templates", "detection", "correlation", "explanation", "done"],
 };
 

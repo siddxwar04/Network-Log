@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { afterEach, vi } from "vitest";
 import type { TimelineChartProps } from "../components/TimelineChart";
 import type { EventsSeries } from "../lib/eventsChart";
+import { clusterOfFindings } from "../lib/timeline";
 
 // jsdom cannot lay out or draw a chart. The chart is replaced by a stand-in with one button
 // per incident band, so tests can still click a band. What the chart shows is tested on its
@@ -22,7 +23,7 @@ vi.mock("../components/EventsChart", () => ({
 // The incident timeline likewise: one button per marker, and one that zooms into the first
 // half of the range as a drag across the chart would. Clustering is tested on its own.
 vi.mock("../components/TimelineChart", () => ({
-  default: ({ lanes, clusters, range, onZoom, onSelect }: TimelineChartProps) =>
+  default: ({ lanes, clusters, range, current, onZoom, onSelect }: TimelineChartProps) =>
     createElement(
       "div",
       { "data-testid": "timeline-chart", "data-lanes": lanes.join(","), "data-markers": clusters.length },
@@ -34,7 +35,12 @@ vi.mock("../components/TimelineChart", () => ({
       clusters.map((cluster) =>
         createElement(
           "button",
-          { key: cluster.key, type: "button", onClick: () => onSelect(cluster.events[0]) },
+          {
+            key: cluster.key,
+            type: "button",
+            "data-current": current && clusterOfFindings(cluster, current) ? "true" : undefined,
+            onClick: () => onSelect(cluster.events[0]),
+          },
           `Marker: ${cluster.kind} on ${lanes[cluster.lane]} x${cluster.events.length}`,
         ),
       ),

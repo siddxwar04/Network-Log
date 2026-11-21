@@ -59,7 +59,7 @@ function Node({
         height={NODE.height}
         rx={8}
         className={`${node.suspect ? "fill-panel" : node.root ? "fill-root/15" : "fill-panel"} ${border} transition-colors`}
-        strokeWidth={selected || node.root ? 2 : 1}
+        strokeWidth={selected ? 3 : node.root ? 2 : 1}
         strokeDasharray={node.suspect || node.apart ? "6 4" : undefined}
       />
       <text x={12} y={20} className={`text-[10px] font-semibold tracking-wide uppercase ${node.suspect ? "fill-warn" : node.root ? "fill-root" : "fill-faint"}`}>

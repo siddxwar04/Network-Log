@@ -10,7 +10,7 @@ import { useEffect, useRef } from "react";
 import type { TimelineEvent } from "../api/types";
 import { useApp } from "../lib/app-state";
 import { formatNumber, utcTime } from "../lib/format";
-import { KIND_STYLE, KINDS, laneHeight, type Cluster, type TimeRange } from "../lib/timeline";
+import { clusterOfFindings, KIND_STYLE, KINDS, laneHeight, type Cluster, type TimeRange } from "../lib/timeline";
 
 echarts.use([ScatterChart, GridComponent, TooltipComponent, MarkLineComponent, BrushComponent, SVGRenderer]);
 
@@ -18,6 +18,8 @@ export interface TimelineChartProps {
   lanes: string[];
   clusters: Cluster[];
   range: TimeRange;
+  /** The findings of the replay's current step, if a replay is running. */
+  current?: ReadonlySet<number> | null;
   onZoom: (range: TimeRange) => void;
   onSelect: (event: TimelineEvent) => void;
 }
@@ -35,7 +37,7 @@ function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
 
-export default function TimelineChart({ lanes, clusters, range, onZoom, onSelect }: TimelineChartProps) {
+export default function TimelineChart({ lanes, clusters, range, current = null, onZoom, onSelect }: TimelineChartProps) {
   const box = useRef<HTMLDivElement>(null);
   const { theme } = useApp();
   const handlers = useRef({ onZoom, onSelect });
@@ -65,14 +67,18 @@ export default function TimelineChart({ lanes, clusters, range, onZoom, onSelect
         .filter(({ cluster }) => cluster.kind === kind)
         .map(({ cluster, index }) => {
           const count = cluster.events.length;
-          const size = (count > 1 ? 13 + Math.min(9, Math.log2(count) * 2) : 11) + (cluster.root ? 3 : 0);
+          // During a replay the current step's markers are larger and outlined, and the
+          // others fade: told apart by size and outline, not by color alone.
+          const marked = current !== null && clusterOfFindings(cluster, current);
+          const size = (count > 1 ? 13 + Math.min(9, Math.log2(count) * 2) : 11) + (cluster.root ? 3 : 0) + (marked ? 6 : 0);
           return {
             value: [cluster.start, cluster.lane, count, index],
             symbolSize: size,
             itemStyle: {
               color: token(KIND_STYLE[kind].cssVar),
-              borderColor: cluster.root ? ink : "transparent",
-              borderWidth: cluster.root ? 2 : 0,
+              opacity: current === null || marked ? 1 : 0.25,
+              borderColor: marked ? accent : cluster.root ? ink : "transparent",
+              borderWidth: marked ? 3 : cluster.root ? 2 : 0,
             },
             label: {
               show: count > 1,
@@ -173,7 +179,7 @@ export default function TimelineChart({ lanes, clusters, range, onZoom, onSelect
       observer?.disconnect();
       chart.dispose();
     };
-  }, [lanes, clusters, range, theme]);
+  }, [lanes, clusters, range, current, theme]);
 
   return <div ref={box} style={{ height: laneHeight(lanes.length) }} className="w-full" aria-hidden="true" />;
 }

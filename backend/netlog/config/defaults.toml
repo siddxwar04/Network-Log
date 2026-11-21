@@ -381,6 +381,9 @@ timeline_max_events = 2000
 histogram_buckets = 120
 # The most lines of context a request may ask for on each side of one log line.
 max_context_lines = 10
+# How long the incident replay in the web app stays on a step before moving to the next
+# when it plays by itself, in seconds.
+replay_step_seconds = 4
 # The results of the evaluation harness (python -m eval.harness), shown by
 # GET /api/evaluation and the Evaluation page.
 evaluation_results = "eval/results/latest.json"

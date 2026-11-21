@@ -217,6 +217,13 @@ def test_an_oversized_file_is_refused_politely(tmp_path):
         assert client.get("/api/health").json()["max_upload_bytes"] == 1048
 
 
+def test_the_replay_delay_comes_from_the_settings(tmp_path):
+    with TestClient(build(tmp_path, replay_step_seconds=1.5)) as client:
+        assert client.get("/api/health").json()["replay"] == {"step_seconds": 1.5}
+    with pytest.raises(ValueError, match="replay_step_seconds"):
+        build(tmp_path, replay_step_seconds=0)
+
+
 def test_a_utf16_file_is_text_not_binary(client):
     text = small_log().decode().encode("utf-16")  # what Windows PowerShell redirection writes
     created = upload(client, text).json()
@@ -892,6 +899,7 @@ def test_health(loaded):
         "redaction": {"enabled": True},
         "demo": {"active": False, "stored_explanations": 0},
         "max_upload_bytes": 50 * 1024 * 1024,
+        "replay": {"step_seconds": 4.0},
         "stages": list(STAGES),
     }
     assert "key" not in json.dumps(health).lower()

@@ -4,8 +4,8 @@
 // statement's line numbers are buttons that find the line on the right, so a reader can
 // check any claim against the log itself.
 
-import { ArrowDown, Download, HelpCircle, RefreshCw, ShieldAlert } from "lucide-react";
-import { useCallback, useMemo, type ReactNode, useState } from "react";
+import { ArrowDown, Download, HelpCircle, ListVideo, RefreshCw, ShieldAlert } from "lucide-react";
+import { useCallback, useMemo, type ReactNode, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useExplanation, useHealth, useIncident, useRegenerate, useTimeline, useUpload } from "../api/queries";
@@ -15,11 +15,13 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EvidencePanel } from "../components/EvidencePanel";
 import { IncidentTimeline } from "../components/IncidentTimeline";
 import { ExplanationBody, FallbackNote, SourceBadge, Unknowns } from "../components/Explanation";
+import { ReplayBar } from "../components/Replay";
 import { useToast } from "../components/Toasts";
 import { Button, ErrorState, LinkButton, PageHeader, Panel, SkeletonRows, Spinner } from "../components/ui";
 import type { ChainNode } from "../lib/chain";
 import { evidenceLines, groupEvidence, lineAnchor, linesOfFindings } from "../lib/evidence";
-import { formatDuration, utcSpan } from "../lib/format";
+import { formatDuration, plural, utcSpan } from "../lib/format";
+import { prefersReducedMotion, replaySteps } from "../lib/replay";
 import { SEVERITY, SeverityBadge } from "../lib/severity";
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -116,6 +118,11 @@ export default function IncidentPage() {
   // Lines picked on the timeline that the evidence panel did not list yet.
   const [extra, setExtra] = useState<EvidenceLine[]>([]);
   const [confirming, setConfirming] = useState(false);
+  // The replay: which step it is on, or null when none is running; and the page as it was
+  // when the replay began, to put back when it ends.
+  const [replay, setReplay] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const before = useRef<{ selected: ReadonlySet<number>; step: number | null; scroll: number } | null>(null);
 
   const lookup = useMemo(
     () => (incident.data ? evidenceLines(incident.data, explanation.data, extra) : new Map<number, EvidenceLine>()),
@@ -165,6 +172,63 @@ export default function IncidentPage() {
       show(linesOfFindings(incident.data, lookup, node.step.findings));
     },
     [incident.data, lookup, show],
+  );
+
+  const steps = useMemo(
+    () => (incident.data ? replaySteps(incident.data, explanation.data, lookup) : []),
+    [incident.data, explanation.data, lookup],
+  );
+
+  // A step of the replay: mark its box in the chain and its log lines, and bring both into
+  // view inside their own panels. Focus stays on the controls.
+  const showStep = useCallback(
+    (index: number) => {
+      const current = steps[index];
+      if (!current) return;
+      setReplay(index);
+      setStep(current.node.index);
+      setSelected(new Set(current.lines));
+      const behavior = prefersReducedMotion() ? "auto" : "smooth";
+      window.requestAnimationFrame(() => {
+        const row = current.lines.length ? document.getElementById(lineAnchor(current.lines[0])) : null;
+        const pane = row?.closest<HTMLElement>(".log-surface");
+        if (row && pane) {
+          const top = row.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+          pane.scrollTo?.({ top: Math.max(0, top - pane.clientHeight / 3), behavior });
+        }
+        document
+          .querySelector(`#causal-chain [role="button"][aria-pressed="true"]`)
+          ?.scrollIntoView?.({ block: "nearest", inline: "center", behavior });
+      });
+    },
+    [steps],
+  );
+
+  const startReplay = useCallback(() => {
+    before.current = { selected, step, scroll: window.scrollY };
+    document.getElementById("causal-chain")?.scrollIntoView?.({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    showStep(0);
+    setPlaying(steps.length > 1);
+  }, [selected, step, showStep, steps.length]);
+
+  // Leaving puts the page back as it was: what was marked, where it was scrolled, and focus
+  // on the button that started the replay.
+  const exitReplay = useCallback(() => {
+    const was = before.current;
+    before.current = null;
+    setReplay(null);
+    setPlaying(false);
+    setSelected(was?.selected ?? new Set());
+    setStep(was?.step ?? null);
+    window.requestAnimationFrame(() => {
+      if (was) window.scrollTo?.({ top: was.scroll, behavior: "auto" });
+      document.getElementById("replay-start")?.focus({ preventScroll: true });
+    });
+  }, []);
+
+  const current = useMemo(
+    () => (replay === null || !steps[replay] ? null : new Set(steps[replay].findings)),
+    [replay, steps],
   );
 
   const name = upload.data?.filename ?? `Upload ${id}`;
@@ -232,7 +296,7 @@ export default function IncidentPage() {
     });
 
   return (
-    <div className="settle">
+    <div className={replay === null ? "settle" : "settle pb-28"}>
       <PageHeader
         crumbs={crumbs}
         title={facts.headline}
@@ -303,7 +367,9 @@ export default function IncidentPage() {
         action={<span className="text-xs text-faint">Click a step to see its log lines.</span>}
         className="mb-4 min-w-0"
       >
-        <CausalChain incident={facts} selected={step} onSelect={selectStep} />
+        <div id="causal-chain" className="scroll-mt-28">
+          <CausalChain incident={facts} selected={step} onSelect={selectStep} />
+        </div>
       </Panel>
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
@@ -340,6 +406,15 @@ export default function IncidentPage() {
                 </div>
               )}
               <ExplanationBody explanation={explanation.data} lookup={lookup} onSelect={select} />
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-line px-4 py-3">
+                <Button id="replay-start" onClick={startReplay} disabled={replay !== null || steps.length === 0}>
+                  <ListVideo aria-hidden="true" className="size-4" />
+                  Replay step by step
+                </Button>
+                <span className="text-xs text-muted">
+                  Walks through the {plural(steps.length, "step")} of the chain in order, with the log lines behind each.
+                </span>
+              </div>
             </>
           )}
         </Panel>
@@ -361,11 +436,23 @@ export default function IncidentPage() {
         {timeline.error ? (
           <ErrorState error={timeline.error} onRetry={() => timeline.refetch()} />
         ) : timeline.data ? (
-          <IncidentTimeline timeline={timeline.data} onSelect={selectEvent} />
+          <IncidentTimeline timeline={timeline.data} onSelect={selectEvent} current={current} />
         ) : (
           <SkeletonRows rows={4} />
         )}
       </Panel>
+
+      {replay !== null && steps.length > 0 && (
+        <ReplayBar
+          steps={steps}
+          index={Math.min(replay, steps.length - 1)}
+          playing={playing}
+          stepSeconds={health.data?.replay?.step_seconds ?? 0}
+          onStep={showStep}
+          onPlaying={setPlaying}
+          onExit={exitReplay}
+        />
+      )}
 
       <ConfirmDialog
         open={confirming}

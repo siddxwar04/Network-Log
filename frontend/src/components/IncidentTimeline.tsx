@@ -44,9 +44,12 @@ function Legend({ kinds }: { kinds: Set<string> }) {
 export function IncidentTimeline({
   timeline,
   onSelect,
+  current = null,
 }: {
   timeline: Timeline;
   onSelect: (event: TimelineEvent) => void;
+  /** The findings of the replay's current step: their markers are marked, the rest dimmed. */
+  current?: ReadonlySet<number> | null;
 }) {
   const full = useMemo(() => timelineRange(timeline), [timeline]);
   const [zoom, setZoom] = useState<TimeRange | null>(null);
@@ -77,7 +80,7 @@ export function IncidentTimeline({
       </div>
       <div role="img" aria-label={describeTimeline(timeline)} className="px-2">
         <Suspense fallback={<div style={{ height: laneHeight(lanes.length) }} className="animate-pulse rounded bg-raised" />}>
-          <TimelineChart lanes={lanes} clusters={clusters} range={range} onZoom={setZoom} onSelect={onSelect} />
+          <TimelineChart lanes={lanes} clusters={clusters} range={range} current={current} onZoom={setZoom} onSelect={onSelect} />
         </Suspense>
       </div>
       <figcaption className="px-4 pb-3 text-2xs text-faint">

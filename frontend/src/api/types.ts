@@ -83,6 +83,8 @@ export interface Health {
    * an LLM wrote earlier and that are stored with the app. */
   demo: { active: boolean; stored_explanations: number };
   max_upload_bytes: number;
+  /** The incident replay: how long Play stays on a step, in seconds. */
+  replay: { step_seconds: number };
   stages: Stage[];
 }
 

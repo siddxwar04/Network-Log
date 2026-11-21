@@ -89,6 +89,12 @@ export function clusterEvents(timeline: IncidentTimeline, range: TimeRange, slot
   return clusters;
 }
 
+/** Whether a marker holds an event of any of these findings. The replay marks the markers
+ * of its current step this way. */
+export function clusterOfFindings(cluster: Cluster, findings: ReadonlySet<number>): boolean {
+  return cluster.events.some((event) => event.findings.some((id) => findings.has(id)));
+}
+
 /** The lanes to draw: the API's, plus one for events that name no device. */
 export function laneNames(timeline: IncidentTimeline): string[] {
   const unnamed = timeline.events.some((event) => !event.host || !timeline.lanes.includes(event.host));

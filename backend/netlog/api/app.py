@@ -120,6 +120,7 @@ class ApiSettings:
     histogram_buckets: int
     workers: int
     max_context_lines: int = 10
+    replay_step_seconds: float = 4.0
     evaluation_results: Path = Path("eval/results/latest.json")
 
 
@@ -127,7 +128,7 @@ def api_settings(config: dict | None = None, db_path: str | Path | None = None) 
     settings = (config or load_config())["api"]
     for name in (
         "max_upload_mb", "default_page_size", "max_page_size", "timeline_max_events",
-        "histogram_buckets", "workers", "max_context_lines",
+        "histogram_buckets", "workers", "max_context_lines", "replay_step_seconds",
     ):  # fmt: skip
         if settings[name] <= 0:
             raise ValueError(f"api.{name} must be greater than zero")
@@ -148,6 +149,7 @@ def api_settings(config: dict | None = None, db_path: str | Path | None = None) 
         max_page_size=int(settings["max_page_size"]),
         timeline_max_events=int(settings["timeline_max_events"]),
         histogram_buckets=int(settings["histogram_buckets"]),
+        replay_step_seconds=float(settings["replay_step_seconds"]),
         workers=int(settings["workers"]),
         max_context_lines=int(settings["max_context_lines"]),
         evaluation_results=Path(settings["evaluation_results"]),
@@ -610,6 +612,7 @@ def create_app(
                 "stored_explanations": len(load_stored(stored_path(config))),
             },
             "max_upload_bytes": settings.max_upload_bytes,
+            "replay": {"step_seconds": settings.replay_step_seconds},
             "stages": list(STAGES),
         }
 
