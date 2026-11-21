@@ -68,7 +68,7 @@ Every `[[rule]]` has these settings:
 |---|---|
 | `name` | A unique name, such as `config_storm`. A name already used by a built-in rule replaces that rule |
 | `incident_type` | What kind of problem it is, such as `config_storm`. Findings of the same type and devices are grouped into incidents |
-| `kind` | `threshold`, `sequence` or `absence` (below) |
+| `kind` | `threshold`, `share`, `sequence` or `absence` (below) |
 | `title` | The finding's one-line title. It may use `{host}`, `{count}`, `{duration}` and any field the rule groups by, such as `{interface}`; a field written `extra.network` is used as `{network}`. Only the name goes in the braces: formatting such as `{count:>5}` is refused |
 | `description` | One sentence on what the rule is for |
 | `enabled` | `true` (the default) or `false` |
@@ -96,11 +96,26 @@ At least `threshold` matching events for the same group within `window_seconds`.
 | `group_by` | The fields that make events "the same thing", such as `["host", "interface"]`. Required |
 | `window_seconds` | The time window. Required, greater than zero |
 | `threshold` | How many events. Required, a whole number greater than zero |
+| `count_distinct` | Count different values of this field instead of events: `count_distinct = "port"` makes `threshold = 25` mean 25 different ports, so retries to one port count once. It cannot be a `group_by` field. The title can use `{distinct_port}` |
 | `distinct` | Count how many different values of a field were seen, such as the usernames tried |
 | `capture` | Record the most common value of a field |
 | `tags` | Add a flag when a metric reaches a level: `{ name = "flag", metric = "count", at_least = 20 }` |
 | `followed_by` | Add a flag when a second kind of event came afterwards, such as a successful login after many failures |
 | `related` | Add other events about the same thing to the evidence |
+
+### `kind = "share"`
+
+The matching events make up at least `share` of the events `of` matches, and number at least `threshold`, within `window_seconds`, for the same group. The built-in `dns_failure_spike` is one: failed answers as a share of the questions asked.
+
+| Setting | Meaning |
+|---|---|
+| `event_keys`, `where`, `where_not` | The events being measured, such as failures |
+| `of` | A table with `event_keys` (and optionally `where`, `where_not`): what they are a share of, such as all queries |
+| `group_by`, `window_seconds`, `threshold` | As for a threshold rule. `threshold` is the least number of measured events |
+| `share` | The share, from 0 to 1: `0.2` is 20% |
+| `distinct`, `capture` | As for a threshold rule |
+
+When there are fewer `of` events than measured ones (a server that logs its failures but not its queries), the measured events are taken as the whole. The title can use `{count}`, `{total}` (the `of` events in the same stretch), `{percent}` and `{peak_percent}`. Strength is the busiest window's share divided by `share` times `strong_at`.
 
 ### `kind = "sequence"`
 

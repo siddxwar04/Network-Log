@@ -1,6 +1,6 @@
 """Rule definitions: loading them from TOML and checking they make sense.
 
-Rules are data. The engine knows how to run three kinds of rule; everything specific to
+Rules are data. The engine knows how to run four kinds of rule; everything specific to
 one kind of problem (which messages, which thresholds, what to call it, how serious it
 is) lives in `config/rules.toml`.
 """
@@ -19,7 +19,7 @@ from netlog.schema import Event
 from netlog.storage.database import ENTITY_COLUMNS
 
 _TOP_FIELDS = ("host", "app", "source_type", "severity", "event_key")
-KINDS = ("threshold", "sequence", "absence")
+KINDS = ("threshold", "sequence", "absence", "share")
 # From least to most serious.
 LEVELS = ("info", "low", "medium", "high", "critical")
 
@@ -44,6 +44,7 @@ _KEYS_BY_KIND = {
         "group_by",
         "window_seconds",
         "threshold",
+        "count_distinct",
         "distinct",
         "capture",
         "tags",
@@ -52,6 +53,9 @@ _KEYS_BY_KIND = {
     },
     "sequence": _PAIR_KEYS,
     "absence": _PAIR_KEYS,
+    "share": _COMMON_KEYS
+    | _MATCHER_KEYS
+    | {"of", "group_by", "window_seconds", "threshold", "share", "distinct", "capture"},
 }
 _FOLLOWED_BY_KEYS = _MATCHER_KEYS | {"flag", "same", "within_seconds", "after"}
 _RELATED_KEYS = _MATCHER_KEYS | {"same", "margin_seconds", "capture"}
@@ -163,11 +167,17 @@ class Rule:
     group_by: tuple[str, ...] = ()
     window_seconds: float = 0
     threshold: int = 0
+    # Count how many different values of this field a window holds, instead of how many
+    # events: one address reaching 500 different ports, not one port 500 times.
+    count_distinct: str | None = None
     distinct: tuple[str, ...] = ()
     capture: tuple[str, ...] = ()
     tags: tuple[Tag, ...] = ()
     followed_by: FollowedBy | None = None
     related: Related | None = None
+    # share: the events matched above, as a share of the events `of` matches
+    of: Matcher | None = None
+    share: float = 0.0
     # sequence and absence
     first: Matcher | None = None
     then: Matcher | None = None
@@ -311,9 +321,46 @@ def _parse_rule(table: dict) -> Rule:
     }
     title_fields = {"host", "count", "duration"}
 
+    if kind == "share":
+        group_by = reader.fields("group_by")
+        distinct = reader.fields("distinct", required=False)
+        of = reader.sub("of")
+        of.check_keys(_MATCHER_KEYS)
+        metrics = {"total", "percent", "peak_percent", "threshold", "window_seconds"}
+        metrics |= {f"distinct_{metric_name(name)}" for name in distinct}
+        group_names = {metric_name(name) for name in group_by}
+        _check_title(reader, common["title"], title_fields | group_names | metrics)
+        share = reader.number("share")
+        if share > 1:
+            raise reader.fail("share", f"is a fraction from 0 to 1, such as 0.25, not {share!r}")
+        return Rule(
+            **common,
+            severity_when=_escalations(reader, set()),
+            matcher=reader.matcher(),
+            of=of.matcher(),
+            group_by=group_by,
+            window_seconds=reader.number("window_seconds"),
+            threshold=reader.number("threshold", whole=True),
+            share=share,
+            distinct=distinct,
+            capture=reader.fields("capture", required=False),
+        )
+
     if kind == "threshold":
         group_by = reader.fields("group_by")
         distinct = reader.fields("distinct", required=False)
+        count_distinct = table.get("count_distinct")
+        if count_distinct is not None:
+            if not _is_field(count_distinct):
+                raise reader.fail(
+                    "count_distinct", f"names {count_distinct!r}, which is not a field of an event"
+                )
+            if count_distinct in group_by:
+                raise reader.fail(
+                    "count_distinct", "names a group_by field, which has one value per group"
+                )
+            if count_distinct not in distinct:
+                distinct = (*distinct, count_distinct)
         capture = reader.fields("capture", required=False)
         metrics = {"peak_count", "threshold", "window_seconds", "rate_per_minute"}
         metrics |= {f"distinct_{metric_name(name)}" for name in distinct}
@@ -365,6 +412,7 @@ def _parse_rule(table: dict) -> Rule:
             group_by=group_by,
             window_seconds=reader.number("window_seconds"),
             threshold=reader.number("threshold", whole=True),
+            count_distinct=count_distinct,
             distinct=distinct,
             capture=capture,
             tags=tuple(tags),
@@ -421,8 +469,9 @@ OVERRIDABLE = {
     "severity": KINDS,
     "severity_because": KINDS,
     "strong_at": KINDS,
-    "threshold": ("threshold",),
-    "window_seconds": ("threshold",),
+    "threshold": ("threshold", "share"),
+    "window_seconds": ("threshold", "share"),
+    "share": ("share",),
     "within_seconds": ("sequence", "absence"),
 }
 _CRITICAL_KEYS = {"devices", "interfaces"}
@@ -483,6 +532,10 @@ def apply_override(rule: Rule, settings: dict) -> Rule:
             changes[key] = reader.text(key)
         elif key == "threshold":
             changes[key] = reader.number(key, whole=True)
+        elif key == "share":
+            changes[key] = reader.number(key)
+            if changes[key] > 1:
+                raise reader.fail(key, f"is a fraction from 0 to 1, such as 0.25, not {value!r}")
         else:
             changes[key] = reader.number(key)
     return replace(rule, **changes)
@@ -490,9 +543,9 @@ def apply_override(rule: Rule, settings: dict) -> Rule:
 
 def _known_event_keys() -> set[str]:
     """The message types the parsers produce, for spotting a typo in a rule file."""
-    from netlog.parsers import cisco, dhcp, linux_auth
+    from netlog.parsers import cisco, dhcp, dns, firewall, linux_auth
 
-    known = set(cisco._EXTRACTORS)
+    known = set(cisco._EXTRACTORS) | firewall.known_event_keys() | dns.known_event_keys()
     for patterns in (linux_auth._SSHD, dhcp._DHCPD):
         known |= {key for key, _, _ in patterns._rules}
     known |= {"sudo.auth_failure", "sudo.not_in_sudoers", "dhcp.no_free_leases"}
@@ -503,7 +556,7 @@ def _known_event_keys() -> set[str]:
 
 def event_keys_of(rule: Rule) -> list[str]:
     """Every message type a rule looks at."""
-    matchers = [rule.matcher, rule.first, rule.then]
+    matchers = [rule.matcher, rule.of, rule.first, rule.then]
     if rule.followed_by:
         matchers.append(rule.followed_by.matcher)
     if rule.related:
@@ -533,7 +586,7 @@ def _critical(table: object, source: str) -> tuple[list[str], list[dict]]:
         ):
             raise RuleError(
                 f"{source}: [critical] each entry of interfaces must name a host and an "
-                "interface, such as { host = \"R1\", interface = \"GigabitEthernet0/1\" }"
+                'interface, such as { host = "R1", interface = "GigabitEthernet0/1" }'
             )
     return devices, interfaces
 

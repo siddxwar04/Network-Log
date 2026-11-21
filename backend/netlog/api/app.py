@@ -81,6 +81,8 @@ _KINDS = (
     ("dhcp.", "dhcp"),
 )
 KINDS = ("link", "ospf", "bgp", "login", "config", "dhcp", "system")
+# Firewall and DNS events have no kind of their own on the timeline yet: they are shown
+# as "system".
 _CLI_HINTS = (" Use --year to set it.", " Use --timezone to set it.")
 
 DESCRIPTION = """
@@ -224,6 +226,14 @@ def rule_json(rule: Rule, ruleset: RuleSet) -> dict:
             threshold=rule.threshold,
             window_seconds=rule.window_seconds,
             group_by=list(rule.group_by),
+            count_distinct=rule.count_distinct,
+        )
+    elif rule.kind == "share":
+        data.update(
+            threshold=rule.threshold,
+            window_seconds=rule.window_seconds,
+            share=rule.share,
+            group_by=list(rule.group_by),
         )
     else:
         data.update(within_seconds=rule.within_seconds, same=list(rule.same))
@@ -237,8 +247,15 @@ class RuleChange(BaseModel):
 
     enabled: bool | None = None
     severity: Literal["info", "low", "medium", "high", "critical"] | None = None
-    threshold: int | None = Field(None, description="For a threshold rule: how many events.")
-    window_seconds: float | None = Field(None, description="For a threshold rule: within how long.")
+    threshold: int | None = Field(
+        None, description="For a threshold or share rule: how many events."
+    )
+    window_seconds: float | None = Field(
+        None, description="For a threshold or share rule: within how long."
+    )
+    share: float | None = Field(
+        None, gt=0, le=1, description="For a share rule: the share, from 0 to 1."
+    )
     within_seconds: float | None = Field(
         None, description="For a sequence or absence rule: the time limit."
     )

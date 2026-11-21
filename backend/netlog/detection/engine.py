@@ -1,7 +1,10 @@
 """The detection engine: runs rules over an upload's events and produces findings.
 
-The engine contains no knowledge of any particular problem. It knows three things:
-  - threshold: how to count events per group in a sliding window;
+The engine contains no knowledge of any particular problem. It knows four things:
+  - threshold: how to count events, or the different values of one field, per group in
+               a sliding window;
+  - share:     how to measure what share of one kind of event another kind makes up,
+               such as failed DNS answers among all queries;
   - sequence:  how to spot one event followed by another;
   - absence:   how to spot an event that is not followed by its counterpart in time,
                such as an interface going down and not coming back.
@@ -11,7 +14,9 @@ the rule files.
 
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
+from collections.abc import Hashable
 from datetime import datetime, timedelta
 
 from netlog.config import load_config
@@ -77,11 +82,15 @@ def _grouped(events: list[Event], fields: tuple[str, ...]) -> dict[tuple, list[E
 
 
 def hot_ranges(
-    times: list[datetime], window: timedelta, threshold: int
+    times: list[datetime],
+    window: timedelta,
+    threshold: int,
+    values: list[Hashable] | None = None,
 ) -> list[tuple[int, int, int, int]]:
     """Find the stretches of `times` where the rule's threshold is met.
 
-    A window is "hot" when it holds at least `threshold` events. Hot windows that
+    A window is "hot" when it holds at least `threshold` events, or, when `values` is
+    given (one per event), at least `threshold` different values. Hot windows that
     overlap, or that follow each other within one window length, are joined: an
     interface flapping for half an hour is one problem, not six.
 
@@ -90,10 +99,17 @@ def hot_ranges(
     """
     ranges: list[list[int]] = []
     oldest = 0
+    seen: Counter = Counter()
     for newest, moment in enumerate(times):
+        if values is not None:
+            seen[values[newest]] += 1
         while moment - times[oldest] > window:
+            if values is not None:
+                seen[values[oldest]] -= 1
+                if not seen[values[oldest]]:
+                    del seen[values[oldest]]
             oldest += 1
-        count = newest - oldest + 1
+        count = newest - oldest + 1 if values is None else len(seen)
         if count < threshold:
             continue
         previous = ranges[-1] if ranges else None
@@ -137,8 +153,12 @@ def _run_threshold(db: Database, upload_id: int, rule: Rule) -> list[Finding]:
 
     findings = []
     for key, events in groups.items():
+        values = None
+        if rule.count_distinct:
+            events = [e for e in events if field_value(e, rule.count_distinct) is not None]
+            values = [field_value(e, rule.count_distinct) for e in events]
         times = [e.timestamp for e in events]
-        for first, last, peak, crossed in hot_ranges(times, window, rule.threshold):
+        for first, last, peak, crossed in hot_ranges(times, window, rule.threshold, values):
             evidence = events[first : last + 1]
             group = dict(zip(rule.group_by, key, strict=True))
             duration = (times[last] - times[first]).total_seconds()
@@ -205,6 +225,79 @@ def _run_threshold(db: Database, upload_id: int, rule: Rule) -> list[Finding]:
                     flags=flags,
                     evidence=evidence_ids,
                     strength=_strength(peak, rule.threshold, rule.strong_at),
+                )
+            )
+    return findings
+
+
+def _run_share(db: Database, upload_id: int, rule: Rule) -> list[Finding]:
+    """The matched events make up at least `share` of the events `of` matches, and there
+    are at least `threshold` of them, within one window, per group.
+
+    When the log holds fewer `of` events than matched ones (query logging switched off,
+    so only the failures are logged), the matched events are taken as the whole.
+    """
+    window = timedelta(seconds=rule.window_seconds)
+    groups = _grouped(_matching(db, upload_id, rule.matcher), rule.group_by)
+    bases = _grouped(_matching(db, upload_id, rule.of), rule.group_by)
+
+    findings = []
+    for key, events in groups.items():
+        times = [e.timestamp for e in events]
+        base_times = [e.timestamp for e in bases.get(key, [])]
+
+        def base_between(start: datetime, end: datetime, base_times=base_times) -> int:
+            return bisect_right(base_times, end) - bisect_left(base_times, start)
+
+        ranges: list[list] = []  # first index, last index, peak share
+        oldest = 0
+        for newest, moment in enumerate(times):
+            while moment - times[oldest] > window:
+                oldest += 1
+            count = newest - oldest + 1
+            if count < rule.threshold:
+                continue
+            share = count / max(base_between(moment - window, moment), count)
+            if share < rule.share:
+                continue
+            previous = ranges[-1] if ranges else None
+            if previous and (oldest <= previous[1] or times[oldest] - times[previous[1]] <= window):
+                previous[1] = newest
+                previous[2] = max(previous[2], share)
+            else:
+                ranges.append([oldest, newest, share])
+
+        for first, last, peak in ranges:
+            evidence = events[first : last + 1]
+            group = dict(zip(rule.group_by, key, strict=True))
+            duration = (times[last] - times[first]).total_seconds()
+            total = max(base_between(times[first], times[last]), len(evidence))
+            metrics: dict = {
+                "count": len(evidence),
+                "total": total,
+                "percent": round(100 * len(evidence) / total),
+                "peak_percent": round(100 * peak),
+                "threshold": rule.threshold,
+                "window_seconds": rule.window_seconds,
+            }
+            for name in rule.distinct:
+                seen = {str(v) for e in evidence if (v := field_value(e, name)) is not None}
+                metrics[f"distinct_{metric_name(name)}"] = len(seen)
+            _capture(evidence, rule.capture, metrics)
+            host = group.get("host") or _single_host(evidence)
+            findings.append(
+                Finding(
+                    rule=rule.name,
+                    incident_type=rule.incident_type,
+                    title=_title(rule, group, host, metrics, duration),
+                    host=host,
+                    group=group,
+                    start=times[first],
+                    end=times[last],
+                    metrics=metrics,
+                    flags=[],
+                    evidence=[e.id for e in evidence],
+                    strength=_strength(peak, rule.share, rule.strong_at),
                 )
             )
     return findings
@@ -313,7 +406,9 @@ def _run_absence(
     return findings
 
 
-_RUNNERS.update(threshold=_run_threshold, sequence=_run_sequence, absence=_run_absence)
+_RUNNERS.update(
+    threshold=_run_threshold, share=_run_share, sequence=_run_sequence, absence=_run_absence
+)
 
 
 def _title(rule: Rule, group: dict, host: str | None, metrics: dict, duration: float) -> str:
