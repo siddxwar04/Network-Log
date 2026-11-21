@@ -135,7 +135,7 @@ describe("the processing screen", () => {
     });
     renderApp("/uploads/1/processing");
 
-    expect(await screen.findByText("Lost contact with the netlog server.", {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(await screen.findByText("Lost contact with the CauseLine server.", {}, { timeout: 3000 })).toBeInTheDocument();
     // The last known progress stays on screen.
     expect(stepsOf()[2]).toEqual(["Detect", "active"]);
   });

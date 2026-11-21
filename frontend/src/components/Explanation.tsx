@@ -87,9 +87,9 @@ export function FallbackNote({ explanation }: { explanation: Explanation }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, id, children }: { title: string; id?: string; children: React.ReactNode }) {
   return (
-    <section className="border-t border-line px-4 py-4">
+    <section id={id} className="scroll-mt-16 border-t border-line px-4 py-4">
       <h3 className="eyebrow mb-2">{title}</h3>
       {children}
     </section>
@@ -111,6 +111,46 @@ export function ExplanationBody({
         <h3 className="eyebrow mb-2">Summary</h3>
         <p className="text-sm leading-relaxed whitespace-pre-line text-ink">{explanation.summary}</p>
       </section>
+
+      {explanation.fix_steps.length > 0 && (
+        <Section title="What to do" id="what-to-do">
+          <ol className="space-y-2">
+            {explanation.fix_steps.map((step, i) => (
+              <li key={i} className="flex gap-2 text-sm text-ink">
+                <span className="mt-0.5 font-mono text-2xs text-faint">{i + 1}.</span>
+                <span>
+                  {step.review_before_running && (
+                    <span className="mr-1.5 inline-flex items-center gap-1 rounded-sm bg-warn/15 px-1.5 py-0.5 align-middle text-2xs font-semibold tracking-wide text-warn uppercase">
+                      <ShieldAlert aria-hidden="true" className="size-3" />
+                      Review before running
+                    </span>
+                  )}
+                  {step.text}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </Section>
+      )}
+
+      {explanation.verification_commands.length > 0 && (
+        <Section title="Check it">
+          <p className="mb-2 text-xs text-muted">
+            These commands only read: they change nothing on the device.
+          </p>
+          <ul className="space-y-2">
+            {explanation.verification_commands.map((item, i) => (
+              <li key={i} className="rounded-md border border-line bg-sunken p-2">
+                <div className="flex items-start gap-2">
+                  <code className="min-w-0 flex-1 font-mono text-xs break-all text-ink">{item.command}</code>
+                  <CopyButton text={item.command} label={item.command} />
+                </div>
+                <p className="mt-1 text-xs text-muted">Healthy: {item.purpose}</p>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       {explanation.timeline.length > 0 && (
         <Section title="What happened, step by step">
@@ -169,46 +209,6 @@ export function ExplanationBody({
               <li key={i}>
                 {item.text}
                 <CitationList lines={item.lines} lookup={lookup} onSelect={onSelect} />
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {explanation.fix_steps.length > 0 && (
-        <Section title="What to do">
-          <ol className="space-y-2">
-            {explanation.fix_steps.map((step, i) => (
-              <li key={i} className="flex gap-2 text-sm text-ink">
-                <span className="mt-0.5 font-mono text-2xs text-faint">{i + 1}.</span>
-                <span>
-                  {step.review_before_running && (
-                    <span className="mr-1.5 inline-flex items-center gap-1 rounded-sm bg-warn/15 px-1.5 py-0.5 align-middle text-2xs font-semibold tracking-wide text-warn uppercase">
-                      <ShieldAlert aria-hidden="true" className="size-3" />
-                      Review before running
-                    </span>
-                  )}
-                  {step.text}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </Section>
-      )}
-
-      {explanation.verification_commands.length > 0 && (
-        <Section title="Check it">
-          <p className="mb-2 text-xs text-muted">
-            These commands only read: they change nothing on the device.
-          </p>
-          <ul className="space-y-2">
-            {explanation.verification_commands.map((item, i) => (
-              <li key={i} className="rounded-md border border-line bg-sunken p-2">
-                <div className="flex items-start gap-2">
-                  <code className="min-w-0 flex-1 font-mono text-xs break-all text-ink">{item.command}</code>
-                  <CopyButton text={item.command} label={item.command} />
-                </div>
-                <p className="mt-1 text-xs text-muted">Healthy: {item.purpose}</p>
               </li>
             ))}
           </ul>

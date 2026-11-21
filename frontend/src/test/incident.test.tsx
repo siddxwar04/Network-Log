@@ -65,6 +65,10 @@ describe("the incident page", () => {
     expect(within(unknowns).getByText(/Why the interface went down/)).toBeInTheDocument();
 
     expect(await within(explanation()).findByRole("heading", { name: "Summary" })).toBeInTheDocument();
+    // The first thing to do is at the top, with the way to the rest.
+    const glance = screen.getByRole("region", { name: "At a glance" });
+    expect(within(glance).getByText("Do this first")).toBeInTheDocument();
+    expect(within(glance).getByRole("link", { name: /how to check/i })).toHaveAttribute("href", "#what-to-do");
     // Evidence grouped by step of the chain, the root cause first.
     const groups = within(evidence()).getAllByRole("region");
     expect(groups[0]).toHaveAccessibleName(/^Root cause: Interface GigabitEthernet0\/1 on R1/);

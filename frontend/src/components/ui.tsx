@@ -48,6 +48,9 @@ const VARIANTS: Record<Variant, string> = {
   ghost: "text-muted hover:bg-raised hover:text-ink",
 };
 
+const BUTTON =
+  "inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition";
+
 export function Button({
   variant = "secondary",
   className = "",
@@ -56,9 +59,38 @@ export function Button({
   return (
     <button
       type="button"
-      className={`inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
+      className={`${BUTTON} disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
       {...props}
     />
+  );
+}
+
+/** A link that looks like a button: to a screen of the app (`to`) or to a file (`href`). */
+export function LinkButton({
+  to,
+  href,
+  download,
+  variant = "secondary",
+  children,
+}: {
+  to?: string;
+  href?: string;
+  download?: boolean;
+  variant?: Variant;
+  children: ReactNode;
+}) {
+  const className = `${BUTTON} ${VARIANTS[variant]}`;
+  if (to !== undefined) {
+    return (
+      <Link to={to} className={className}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <a href={href} download={download} className={className}>
+      {children}
+    </a>
   );
 }
 
@@ -112,7 +144,7 @@ export function ErrorState({ error, onRetry }: { error: ApiError; onRetry?: () =
       <Icon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-danger" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-ink">
-          {error.unreachable ? "The netlog server is not reachable." : error.message}
+          {error.unreachable ? "The CauseLine server is not reachable." : error.message}
         </p>
         {error.unreachable && (
           <p className="mt-1 text-sm text-muted">
@@ -173,7 +205,7 @@ export function PageHeader({
             ))}
           </ol>
         </nav>
-        <h1 className="mt-1 truncate text-xl font-semibold tracking-tight text-ink">{title}</h1>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-balance break-words text-ink">{title}</h1>
         {meta && <div className="mt-1 text-sm text-muted">{meta}</div>}
       </div>
       {actions && <div className="flex shrink-0 gap-2">{actions}</div>}

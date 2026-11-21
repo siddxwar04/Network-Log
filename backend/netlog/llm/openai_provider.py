@@ -43,6 +43,10 @@ def strict_schema(schema: dict) -> dict:
     return fix(schema)
 
 
+class _EffortRefused(Exception):
+    """The model refused the reasoning-effort setting (HTTP 400)."""
+
+
 class OpenAIProvider:
     name = "openai"
 
@@ -51,6 +55,8 @@ class OpenAIProvider:
             raise MissingKeyError("no OpenAI API key was given")
         self._key = api_key
         self._client = client or openai.OpenAI(api_key=api_key, max_retries=0)
+        # Models that refused the reasoning-effort setting; it is not sent to them again.
+        self._no_effort: set[str] = set()
 
     def _clean(self, error: Exception) -> str:
         """The error as text, with the key cut out should the service echo it back."""
@@ -58,8 +64,17 @@ class OpenAIProvider:
         return text.replace(self._key, "[key]") if self._key else text
 
     def complete(self, request: LLMRequest) -> LLMResponse:
+        try:
+            return self._complete(request)
+        except _EffortRefused:
+            # A model that does not reason refuses the setting outright. The setting only
+            # tunes cost, so the request is made once more without it.
+            self._no_effort.add(request.model)
+            return self._complete(request)
+
+    def _complete(self, request: LLMRequest) -> LLMResponse:
         extra = {}
-        if request.reasoning_effort:
+        if request.reasoning_effort and request.model not in self._no_effort:
             extra["reasoning"] = {"effort": request.reasoning_effort}
         try:
             response = self._client.responses.create(
@@ -99,6 +114,8 @@ class OpenAIProvider:
                 raise ServerError(
                     f"OpenAI server error (HTTP {error.status_code}): {self._clean(error)}"
                 ) from None
+            if extra and error.status_code == 400 and "reasoning" in str(error).lower():
+                raise _EffortRefused from None
             raise RequestRejectedError(
                 f"OpenAI rejected the request (HTTP {error.status_code}): {self._clean(error)}"
             ) from None

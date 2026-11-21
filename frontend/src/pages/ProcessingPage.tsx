@@ -108,7 +108,7 @@ export function ProcessingPage() {
               <div role="alert" className="flex items-start gap-3 p-4 text-sm">
                 <Wifi aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-warn" />
                 <div>
-                  <p className="font-medium text-ink">Lost contact with the netlog server.</p>
+                  <p className="font-medium text-ink">Lost contact with the CauseLine server.</p>
                   <p className="mt-1 text-muted">
                     Retrying every few seconds. If the server was stopped, an upload it was working on
                     is marked as failed when it starts again.

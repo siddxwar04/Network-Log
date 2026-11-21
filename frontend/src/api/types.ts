@@ -76,6 +76,9 @@ export interface Health {
   version: string;
   database_schema: number;
   llm: { configured: boolean; provider: string };
+  /** Whether addresses, device names and usernames are replaced by stand-ins before an
+   * evidence pack is sent to the LLM. */
+  redaction: { enabled: boolean };
   /** With no LLM set up the app runs in demo mode: the demo scenarios use explanations
    * an LLM wrote earlier and that are stored with the app. */
   demo: { active: boolean; stored_explanations: number };

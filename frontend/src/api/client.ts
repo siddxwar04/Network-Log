@@ -43,7 +43,7 @@ function unreachable(): ApiError {
   return new ApiError(
     0,
     "unreachable",
-    `Cannot reach the netlog server. Is it running? Start it with: ${START_SERVER}`,
+    `Cannot reach the CauseLine server. Is it running? Start it with: ${START_SERVER}`,
   );
 }
 

@@ -28,7 +28,6 @@ from importlib import resources
 
 from netlog.config import load_config
 from netlog.llm.evidence import EvidencePack
-from netlog.redaction.redactor import is_safe_in_command
 from netlog.llm.explanation import (
     MODES,
     Explanation,
@@ -38,6 +37,7 @@ from netlog.llm.explanation import (
     TimelineStep,
     VerificationCommand,
 )
+from netlog.redaction.redactor import is_safe_in_command
 
 DEFAULT = "default"
 _CUT = "..."

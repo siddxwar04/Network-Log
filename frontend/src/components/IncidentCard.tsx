@@ -1,6 +1,6 @@
 // One incident as a card: how serious, what happened, the likely cause, where and how long.
 
-import { ChevronRight, Clock, Server } from "lucide-react";
+import { ChevronRight, Clock, HelpCircle, Server } from "lucide-react";
 import { Link } from "react-router";
 import type { IncidentSummary } from "../api/types";
 import { formatDuration, utcTime } from "../lib/format";
@@ -25,7 +25,15 @@ export function IncidentCard({ uploadId, incident }: { uploadId: string | number
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <SeverityBadge level={incident.severity} />
-            <span className="text-xs text-faint">{CONFIDENCE[incident.confidence]}</span>
+            {incident.confidence === "low" ? (
+              // The cause is a weak reading: said with an icon and a word, not left as faint text.
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-warn">
+                <HelpCircle aria-hidden="true" className="size-3.5" />
+                {CONFIDENCE.low}, cause uncertain
+              </span>
+            ) : (
+              <span className="text-xs text-faint">{CONFIDENCE[incident.confidence]}</span>
+            )}
           </div>
           <h3 className="mt-2 font-medium text-ink group-hover:text-accent">{incident.headline}</h3>
         </div>

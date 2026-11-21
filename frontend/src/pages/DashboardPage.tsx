@@ -1,19 +1,32 @@
-// The dashboard of one upload: is anything wrong in this log, and how bad?
+// The dashboard of one upload: is anything wrong in this log, how bad, and where to start?
 //
-//   1. stat tiles   2. events over time, with incident bands   3. incident cards
-//   4. the noisiest message patterns and the busiest devices
+//   1. the verdict: the most serious incident, or that nothing is wrong
+//   2. incident cards   3. events over time, with incident bands   4. stat tiles
+//   5. the noisiest message patterns and the busiest devices
 
-import { CalendarClock, FileText, Info, ListTree, Percent, Server, ShieldCheck, TriangleAlert } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarClock,
+  Download,
+  FileText,
+  Info,
+  ListTree,
+  Percent,
+  Server,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
 import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
-import { Link, Navigate, useNavigate, useParams } from "react-router";
+import { Navigate, useNavigate, useParams } from "react-router";
+import { api } from "../api/client";
 import { useIncidents, useSummary, useUnparsedLines, useUpload } from "../api/queries";
 import type { IncidentSummary, UploadSummary } from "../api/types";
 import { LEVELS } from "../api/types";
 import { IncidentCard } from "../components/IncidentCard";
-import { Button, EmptyState, ErrorState, PageHeader, Panel, SkeletonRows } from "../components/ui";
+import { Button, EmptyState, ErrorState, LinkButton, PageHeader, Panel, SkeletonRows } from "../components/ui";
 import { describeEvents, eventsSeries } from "../lib/eventsChart";
-import { formatBytes, formatDuration, formatLocalTime, formatNumber, plural, utcSpan } from "../lib/format";
-import { SeverityCounts } from "../lib/severity";
+import { formatBytes, formatDuration, formatLocalTime, formatNumber, plural, utcSpan, utcTime } from "../lib/format";
+import { SEVERITY, SeverityCounts } from "../lib/severity";
 
 const EventsChart = lazy(() => import("../components/EventsChart"));
 
@@ -34,14 +47,12 @@ function Tile({
   tone?: "warn";
 }) {
   return (
-    <div
-      className={`rounded-lg border bg-panel p-3 shadow-panel ${tone === "warn" ? "border-warn/60" : "border-line"}`}
-    >
+    <div className={`min-w-0 bg-panel px-4 py-3 ${tone === "warn" ? "shadow-[inset_0_2px_0_var(--warn)]" : ""}`}>
       <dt className="eyebrow flex items-center gap-1.5">
         {icon}
         {label}
       </dt>
-      <dd className="mt-1.5 text-2xl font-semibold tracking-tight text-ink tabular-nums">{value}</dd>
+      <dd className="mt-1 font-mono text-xl font-semibold tracking-tight text-ink tabular-nums">{value}</dd>
       {sub && <dd className="mt-0.5 truncate text-xs text-muted">{sub}</dd>}
     </div>
   );
@@ -57,7 +68,10 @@ function Stats({ summary }: { summary: UploadSummary }) {
   const total = LEVELS.reduce((sum, level) => sum + incidents[level], 0);
   const icon = "size-3.5";
   return (
-    <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+    <dl
+      aria-label="About this file"
+      className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line shadow-panel md:grid-cols-3 xl:grid-cols-6"
+    >
       <Tile
         label="Lines"
         icon={<FileText aria-hidden="true" className={icon} />}
@@ -96,6 +110,84 @@ function Stats({ summary }: { summary: UploadSummary }) {
         sub={<SeverityCounts counts={incidents} />}
       />
     </dl>
+  );
+}
+
+const CONFIDENCE = {
+  high: "High confidence",
+  medium: "Medium confidence",
+  low: "Low confidence: treat the cause as uncertain",
+};
+
+/** The answer in one look: the most serious incident and the way into it, or that nothing
+ * is wrong. Everything else on the dashboard is detail behind this. */
+function Verdict({ id, incidents }: { id: string; incidents: IncidentSummary[] }) {
+  if (incidents.length === 0) {
+    return (
+      <section aria-label="Verdict" className="rounded-lg border border-ok/40 bg-ok/10 shadow-panel">
+        <EmptyState
+          title="No incidents found in this log."
+          icon={<ShieldCheck aria-hidden="true" className="mb-2 size-8 text-ok" />}
+        >
+          Nothing reached low severity or above. Routine events, such as configuration changes and
+          single interfaces going down, are recorded but are not problems on their own.
+          <div className="mt-3">
+            <LinkButton to="/">Analyze another file</LinkButton>
+          </div>
+        </EmptyState>
+      </section>
+    );
+  }
+  const worst = incidents[0];
+  const style = SEVERITY[worst.severity];
+  const Icon = style.icon;
+  const root = worst.root_cause;
+  const others = incidents.length - 1;
+  return (
+    <section
+      aria-label="Most serious incident"
+      className={`rounded-lg border border-l-4 p-5 shadow-panel ${style.wash} ${style.edge}`}
+    >
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-4">
+        <div className="flex min-w-0 flex-1 basis-80 gap-4">
+          <span className="mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-full bg-panel/70 ring-1 ring-line">
+            <Icon aria-hidden="true" className={`size-6 ${style.text}`} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold tracking-wide text-ink uppercase">
+              {`Start here: ${style.label} incident`}
+              {others > 0 && (
+                <span className="font-normal text-muted normal-case">{`, and ${others} more below`}</span>
+              )}
+            </p>
+            <p className="mt-1 text-xl leading-snug font-semibold tracking-tight text-balance text-ink">
+              {worst.headline}
+            </p>
+            {root && root.summary !== worst.headline && (
+              <p className="mt-1.5 text-sm text-ink">
+                <span className="text-muted">
+                  {root.kind === "config_change" ? "Suspected cause " : "Probable cause "}
+                </span>
+                {root.summary}
+              </p>
+            )}
+            <p className="mt-2 text-sm text-muted">
+              {`Affects ${worst.devices.join(", ")} · began ${utcTime(worst.start)} UTC · ${CONFIDENCE[worst.confidence]}`}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <LinkButton to={`/uploads/${id}/incidents/${encodeURIComponent(worst.id)}`} variant="primary">
+            See what to do
+            <ArrowRight aria-hidden="true" className="size-4" />
+          </LinkButton>
+          <LinkButton href={api.postmortemUrl(id, worst.id, "senior")} download>
+            <Download aria-hidden="true" className="size-4" />
+            Post-mortem
+          </LinkButton>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -173,19 +265,6 @@ function Timeline({ summary, onOpen }: { summary: UploadSummary; onOpen: (id: st
 }
 
 function Incidents({ id, incidents }: { id: string; incidents: IncidentSummary[] }) {
-  if (incidents.length === 0) {
-    return (
-      <Panel>
-        <EmptyState
-          title="No incidents found in this log."
-          icon={<ShieldCheck aria-hidden="true" className="mb-2 size-8 text-ok" />}
-        >
-          Nothing reached low severity or above. Routine events, such as configuration changes and
-          single interfaces going down, are recorded but are not problems on their own.
-        </EmptyState>
-      </Panel>
-    );
-  }
   return (
     <ul className="grid gap-3 lg:grid-cols-2">
       {incidents.map((incident) => (
@@ -288,12 +367,7 @@ export default function DashboardPage() {
         )
       }
       actions={
-        <Link
-          to={`/uploads/${id}/incidents`}
-          className="inline-flex items-center rounded-md border border-line-strong bg-raised px-3 py-1.5 text-sm font-medium text-ink hover:border-faint"
-        >
-          All incidents
-        </Link>
+        <LinkButton to={`/uploads/${id}/incidents`}>All incidents</LinkButton>
       }
     />
   );
@@ -314,21 +388,24 @@ export default function DashboardPage() {
   }
   const data = summary.data;
   return (
-    <div>
+    <div className="settle">
       {header}
       <div className="space-y-5">
-        <Stats summary={data} />
+        <Verdict id={id} incidents={incidents.data.items} />
         <CoverageWarning id={id} summary={data} />
+        {incidents.data.items.length > 0 && (
+          <section aria-labelledby="incidents-heading" className="space-y-3">
+            <h2 id="incidents-heading" className="text-sm font-semibold text-ink">
+              Incidents <span className="font-normal text-muted">most severe first</span>
+            </h2>
+            <Incidents id={id} incidents={incidents.data.items} />
+          </section>
+        )}
         <Timeline
           summary={data}
           onOpen={(incidentId) => navigate(`/uploads/${id}/incidents/${encodeURIComponent(incidentId)}`)}
         />
-        <section aria-labelledby="incidents-heading" className="space-y-3">
-          <h2 id="incidents-heading" className="text-sm font-semibold text-ink">
-            Incidents <span className="font-normal text-muted">most severe first</span>
-          </h2>
-          <Incidents id={id} incidents={incidents.data.items} />
-        </section>
+        <Stats summary={data} />
         <SideLists summary={data} />
         {data.assumptions.length > 0 && (
           <Panel title="Assumptions">

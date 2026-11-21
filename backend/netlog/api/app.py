@@ -592,8 +592,9 @@ def create_app(
     @app.get("/api/health", tags=["system"], summary="Health check")
     def health() -> dict:
         """Says whether the API is up and can reach its database, which LLM provider is
-        configured (never the key), whether it runs in demo mode, and the upload size
-        limit. With no LLM configured the app is in demo mode: the demo scenarios use the
+        configured (never the key), whether names and addresses are replaced before
+        anything is sent to it, whether it runs in demo mode, and the upload size limit.
+        With no LLM configured the app is in demo mode: the demo scenarios use the
         explanations stored with them, other files get the built-in explanations."""
         with database() as db:
             schema = db.schema_version
@@ -603,6 +604,7 @@ def create_app(
             "version": __version__,
             "database_schema": schema,
             "llm": {"configured": configured, "provider": llm.provider},
+            "redaction": {"enabled": bool(config["redaction"]["enabled"])},
             "demo": {
                 "active": not configured,
                 "stored_explanations": len(load_stored(stored_path(config))),

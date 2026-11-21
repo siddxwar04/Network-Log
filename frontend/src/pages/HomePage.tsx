@@ -160,7 +160,7 @@ export function HomePage() {
             Analyze a log file
           </h1>
           <p className="mt-1 mb-4 max-w-2xl text-sm text-muted">
-            netlog finds the incidents in router, switch, server and DHCP logs, works out what caused
+            CauseLine finds the incidents in router, switch, server and DHCP logs, works out what caused
             what, and explains each one with the log lines that prove it.
           </p>
           <DropZone maxBytes={maxBytes} sending={sending} disabled={loadingDemo !== null} onFile={send} />

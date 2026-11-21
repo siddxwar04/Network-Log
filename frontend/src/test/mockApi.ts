@@ -102,6 +102,7 @@ export const HEALTH: Health = {
   version: "0.1.0",
   database_schema: 9,
   llm: { configured: false, provider: "" },
+  redaction: { enabled: true },
   demo: { active: true, stored_explanations: 0 },
   max_upload_bytes: 50 * 1024 * 1024,
   stages: ["queued", "parsing", "templates", "detection", "correlation", "explanation", "done"],

@@ -1,4 +1,4 @@
-# netlog: Network Log Summarizer and Incident Explainer
+# CauseLine: from network logs to root cause, with the lines that prove it
 
 Reads router, switch, firewall and server logs, finds the incidents in them with deterministic rules, and explains each one in plain English, with every statement linked to the log lines that prove it.
 

@@ -69,6 +69,19 @@ describe("the dashboard", () => {
     expect(within(tile("Message patterns")).getByText("147 lines per pattern")).toBeInTheDocument();
     expect(within(tile("Incidents")).getByText("Critical")).toBeInTheDocument();
 
+    // The verdict comes first: the most serious incident, and the way into it.
+    const verdict = screen.getByRole("region", { name: "Most serious incident" });
+    expect(within(verdict).getByText(/^Start here: /)).toBeInTheDocument();
+    expect(within(verdict).getByText(/and 2 more below/)).toBeInTheDocument();
+    expect(within(verdict).getByRole("link", { name: "See what to do" })).toHaveAttribute(
+      "href",
+      "/uploads/1/incidents/inc-b3dfb3ee42",
+    );
+    expect(within(verdict).getByRole("link", { name: "Post-mortem" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/incidents/inc-b3dfb3ee42/postmortem"),
+    );
+
     // 2. The chart, with its description for screen readers.
     const chart = await screen.findByTestId("events-chart");
     expect(chart).toHaveAttribute("data-bars", "4"); // the empty 02:50 bucket is filled in
@@ -114,6 +127,8 @@ describe("the dashboard", () => {
 
     expect(await screen.findByText("No incidents found in this log.")).toBeInTheDocument();
     expect(screen.getByText(/Routine events, such as configuration changes/)).toBeInTheDocument();
+    // An empty result still says what to do next.
+    expect(screen.getByRole("link", { name: "Analyze another file" })).toHaveAttribute("href", "/");
     expect(within(tile("Lines")).getByText("5,000")).toBeInTheDocument();
     expect(within(tile("Incidents")).getByText("0")).toBeInTheDocument();
     expect(within(tile("Incidents")).getByText("None")).toBeInTheDocument();

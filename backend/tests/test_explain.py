@@ -643,6 +643,47 @@ def test_the_openai_request_asks_for_our_structure_and_is_not_stored():
     assert "reasoning" not in client.calls[0]
 
 
+class RefusesEffort(FakeClient):
+    """A model that does not reason: any request carrying `reasoning` gets HTTP 400."""
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if "reasoning" in kwargs:
+            raise status_error(
+                openai.BadRequestError, 400,
+                "Unsupported parameter: 'reasoning.effort' is not supported with this model",
+            )  # fmt: skip
+        return self.response
+
+
+def test_a_model_that_refuses_reasoning_effort_is_asked_again_without_it():
+    client = RefusesEffort(sdk_response())
+    provider = OpenAIProvider(KEY, client=client)
+    response = provider.complete(request(model="plain-1", reasoning_effort="low"))
+    assert json.loads(response.text) == GOOD
+    assert ["reasoning" in call for call in client.calls] == [True, False]
+    # The model is remembered: the next request does not try the setting again.
+    provider.complete(request(model="plain-1", reasoning_effort="low"))
+    assert len(client.calls) == 3 and "reasoning" not in client.calls[2]
+    # Another model is still sent the setting.
+    with_effort = FakeClient(sdk_response())
+    provider._client = with_effort
+    provider.complete(request(model="gpt-6-luna", reasoning_effort="low"))
+    assert with_effort.calls[0]["reasoning"] == {"effort": "low"}
+
+
+def test_another_400_is_not_retried():
+    # A 400 about something else, or one with no effort sent, is reported as it is.
+    client = FakeClient(error=status_error(openai.BadRequestError, 400, "bad schema"))
+    with pytest.raises(RequestRejectedError):
+        OpenAIProvider(KEY, client=client).complete(request(reasoning_effort="low"))
+    assert len(client.calls) == 1
+    client = FakeClient(error=status_error(openai.BadRequestError, 400, "reasoning is odd"))
+    with pytest.raises(RequestRejectedError):
+        OpenAIProvider(KEY, client=client).complete(request())
+    assert len(client.calls) == 1
+
+
 def test_the_schema_sent_to_openai_is_strict():
     schema = strict_schema(explanation_schema())
 

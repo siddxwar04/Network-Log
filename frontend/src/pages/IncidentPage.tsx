@@ -1,24 +1,26 @@
-// One incident: the facts the rules decided at the top, the explanation on the left, and the
-// log lines behind it on the right. Every statement's line numbers are buttons that find
-// the line on the right, so a reader can check any claim against the log itself.
+// One incident, in the order a reader in a hurry needs it: how bad, the likely cause and
+// what to do first at the top; then the chain of cause and effect; then the explanation on
+// the left with the log lines behind it on the right; the full timeline last. Every
+// statement's line numbers are buttons that find the line on the right, so a reader can
+// check any claim against the log itself.
 
-import { Download, HelpCircle, RefreshCw } from "lucide-react";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { ArrowDown, Download, HelpCircle, RefreshCw, ShieldAlert } from "lucide-react";
+import { useCallback, useMemo, type ReactNode, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useExplanation, useHealth, useIncident, useRegenerate, useTimeline, useUpload } from "../api/queries";
-import type { Audience, EvidenceLine, IncidentDetail, TimelineEvent } from "../api/types";
+import type { Audience, EvidenceLine, Explanation, TimelineEvent } from "../api/types";
 import { CausalChain } from "../components/CausalChain";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EvidencePanel } from "../components/EvidencePanel";
 import { IncidentTimeline } from "../components/IncidentTimeline";
 import { ExplanationBody, FallbackNote, SourceBadge, Unknowns } from "../components/Explanation";
 import { useToast } from "../components/Toasts";
-import { Button, ErrorState, PageHeader, Panel, SkeletonRows, Spinner } from "../components/ui";
+import { Button, ErrorState, LinkButton, PageHeader, Panel, SkeletonRows, Spinner } from "../components/ui";
 import type { ChainNode } from "../lib/chain";
 import { evidenceLines, groupEvidence, lineAnchor, linesOfFindings } from "../lib/evidence";
 import { formatDuration, utcSpan } from "../lib/format";
-import { SeverityBadge } from "../lib/severity";
+import { SEVERITY, SeverityBadge } from "../lib/severity";
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -29,24 +31,48 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** The severity badge, with the rule's reason for it one click away. */
-function Severity({ incident }: { incident: IncidentDetail }) {
-  const [open, setOpen] = useState(false);
+/** One of the three answers at the top of the page: a question and its answer, large. */
+function Answer({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5">
-      <SeverityBadge level={incident.severity} />
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        title={incident.severity_reason}
-        className="inline-flex items-center gap-1 rounded-sm text-xs text-muted hover:text-ink"
+    <div className="min-w-0">
+      <dt className="text-xs font-semibold tracking-wide text-muted uppercase">{label}</dt>
+      <dd className="mt-1.5 text-sm text-ink">{children}</dd>
+    </div>
+  );
+}
+
+/** The first thing to do, taken from the explanation, with the way to the full list. */
+function FirstStep({ explanation, failed }: { explanation?: Explanation; failed: boolean }) {
+  if (failed) return <span className="text-muted">The steps could not be loaded. Try again below.</span>;
+  if (!explanation) {
+    return (
+      <span aria-hidden="true" className="block space-y-2 pt-1">
+        <span className="block h-3.5 w-full animate-pulse rounded bg-ink/10" />
+        <span className="block h-3.5 w-2/3 animate-pulse rounded bg-ink/10" />
+      </span>
+    );
+  }
+  const steps = explanation.fix_steps;
+  if (steps.length === 0) {
+    return <span className="text-muted">No step is suggested for this incident. Read the summary below.</span>;
+  }
+  return (
+    <>
+      <span className="block text-base leading-snug font-medium">{steps[0].text}</span>
+      {steps[0].review_before_running && (
+        <span className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-warn">
+          <ShieldAlert aria-hidden="true" className="size-3.5" />
+          This changes the device. Check it before you run it.
+        </span>
+      )}
+      <a
+        href="#what-to-do"
+        className="mt-1.5 flex w-fit items-center gap-1 text-xs font-medium text-accent hover:underline"
       >
-        <HelpCircle aria-hidden="true" className="size-3.5" />
-        Why {incident.severity}?
-      </button>
-      {open && <span className="basis-full text-xs text-muted">{incident.severity_reason}</span>}
-    </span>
+        <ArrowDown aria-hidden="true" className="size-3.5" />
+        {steps.length > 1 ? `All ${steps.length} steps, and how to check` : "How to check it"}
+      </a>
+    </>
   );
 }
 
@@ -206,35 +232,49 @@ export default function IncidentPage() {
     });
 
   return (
-    <div>
+    <div className="settle">
       <PageHeader
         crumbs={crumbs}
         title={facts.headline}
         meta={facts.title !== facts.headline ? facts.title : undefined}
         actions={
-          <a
-            href={api.postmortemUrl(id, incidentId, mode)}
-            download
-            className="inline-flex items-center gap-1.5 rounded-md border border-line-strong bg-raised px-3 py-1.5 text-sm font-medium text-ink hover:border-faint"
-          >
+          <LinkButton href={api.postmortemUrl(id, incidentId, mode)} download>
             <Download aria-hidden="true" className="size-4" />
             Download post-mortem
-          </a>
+          </LinkButton>
         }
       />
 
-      <Panel className="mb-4">
-        <dl className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Fact label="Severity">
-            <Severity incident={facts} />
-          </Fact>
-          <Fact label={root?.kind === "config_change" ? "Suspect" : "Likely cause"}>
-            {root?.summary ?? "The logs do not point to one cause."}
-          </Fact>
-          <Fact label="Confidence">
-            <span className="font-medium capitalize">{facts.confidence}</span>
-            <span className="text-muted">: {facts.confidence_reason}</span>
-          </Fact>
+      <section
+        aria-label="At a glance"
+        className={`mb-4 overflow-hidden rounded-lg border border-l-4 shadow-panel ${SEVERITY[facts.severity].wash} ${SEVERITY[facts.severity].edge}`}
+      >
+        <dl className="grid gap-x-8 gap-y-5 p-5 lg:grid-cols-3">
+          <Answer label="How bad">
+            <SeverityBadge level={facts.severity} />
+            <span className="mt-1.5 block text-muted">{facts.severity_reason}</span>
+          </Answer>
+          <Answer label={root?.kind === "config_change" ? "Suspect" : "Likely cause"}>
+            <span className="block text-base leading-snug font-medium">
+              {root?.summary ?? "The logs do not point to one cause."}
+            </span>
+            <span className="mt-1.5 block">
+              {facts.confidence === "low" && (
+                <span className="mr-1.5 inline-flex items-center gap-1 rounded-sm bg-warn/15 px-1.5 py-0.5 align-middle text-2xs font-semibold tracking-wide text-warn uppercase">
+                  <HelpCircle aria-hidden="true" className="size-3" />
+                  Uncertain
+                </span>
+              )}
+              <span className="font-medium capitalize">{facts.confidence}</span>
+              <span className="text-muted"> confidence</span>
+              <span className="text-muted">: {facts.confidence_reason}</span>
+            </span>
+          </Answer>
+          <Answer label="Do this first">
+            <FirstStep explanation={explanation.data} failed={Boolean(explanation.error)} />
+          </Answer>
+        </dl>
+        <dl className="grid gap-4 border-t border-line bg-panel px-5 py-3 sm:grid-cols-3">
           <Fact label="When">
             {utcSpan(facts.start, facts.end)}
             <span className="block text-xs text-muted">lasted {formatDuration(facts.duration_seconds)}</span>
@@ -252,26 +292,19 @@ export default function IncidentPage() {
             )}
           </Fact>
         </dl>
-      </Panel>
+      </section>
 
       <div className="mb-4">
         <Unknowns items={unknowns} />
       </div>
 
-      <div className="mb-4 grid gap-4">
-        <Panel title="Timeline" className="min-w-0">
-          {timeline.error ? (
-            <ErrorState error={timeline.error} onRetry={() => timeline.refetch()} />
-          ) : timeline.data ? (
-            <IncidentTimeline timeline={timeline.data} onSelect={selectEvent} />
-          ) : (
-            <SkeletonRows rows={4} />
-          )}
-        </Panel>
-        <Panel title="Causal chain" className="min-w-0">
-          <CausalChain incident={facts} selected={step} onSelect={selectStep} />
-        </Panel>
-      </div>
+      <Panel
+        title="What caused what"
+        action={<span className="text-xs text-faint">Click a step to see its log lines.</span>}
+        className="mb-4 min-w-0"
+      >
+        <CausalChain incident={facts} selected={step} onSelect={selectStep} />
+      </Panel>
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <Panel
@@ -311,10 +344,28 @@ export default function IncidentPage() {
           )}
         </Panel>
 
-        <Panel title="Evidence" className="lg:sticky lg:top-4" bodyClassName="max-h-[calc(100vh-7rem)] overflow-y-auto pb-3">
+        <Panel
+          title="Evidence"
+          className="overflow-hidden lg:sticky lg:top-16"
+          bodyClassName="log-surface max-h-[calc(100vh-8rem)] overflow-y-auto pb-3"
+        >
           <EvidencePanel uploadId={id} groups={groups} selected={selected} />
         </Panel>
       </div>
+
+      <Panel
+        title="Timeline"
+        action={<span className="text-xs text-faint">Every event of the incident, by device.</span>}
+        className="mt-4 min-w-0"
+      >
+        {timeline.error ? (
+          <ErrorState error={timeline.error} onRetry={() => timeline.refetch()} />
+        ) : timeline.data ? (
+          <IncidentTimeline timeline={timeline.data} onSelect={selectEvent} />
+        ) : (
+          <SkeletonRows rows={4} />
+        )}
+      </Panel>
 
       <ConfirmDialog
         open={confirming}

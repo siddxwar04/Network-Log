@@ -220,7 +220,7 @@ describe("when the server cannot be reached", () => {
     });
     renderApp("/");
 
-    const banner = await screen.findByText(/The netlog server is not reachable\. Start it with/);
+    const banner = await screen.findByText(/The CauseLine server is not reachable\. Start it with/);
     expect(banner).toBeInTheDocument();
     const alerts = await screen.findAllByRole("alert");
     expect(alerts.length).toBeGreaterThanOrEqual(3); // the banner, the demos, the uploads
@@ -238,7 +238,7 @@ describe("when the server cannot be reached", () => {
     });
     renderApp("/");
 
-    expect(await screen.findByText(/The netlog server is not reachable\. Start it/)).toBeInTheDocument();
+    expect(await screen.findByText(/The CauseLine server is not reachable\. Start it/)).toBeInTheDocument();
   });
 
   it("recovers by itself once the server answers", async () => {
@@ -249,7 +249,7 @@ describe("when the server cannot be reached", () => {
       "GET /api/uploads": () => (up ? page([uploadItem()]) : "unreachable"),
     });
     const { user } = renderApp("/");
-    await screen.findByText(/The netlog server is not reachable\. Start it/);
+    await screen.findByText(/The CauseLine server is not reachable\. Start it/);
 
     up = true;
     const retry = screen.getAllByRole("button", { name: "Try again" });

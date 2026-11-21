@@ -889,6 +889,7 @@ def test_health(loaded):
         "version": "0.1.0",
         "database_schema": SCHEMA_VERSION,
         "llm": {"configured": True, "provider": ""},  # the tests' stand-in provider
+        "redaction": {"enabled": True},
         "demo": {"active": False, "stored_explanations": 0},
         "max_upload_bytes": 50 * 1024 * 1024,
         "stages": list(STAGES),

@@ -38,7 +38,7 @@ function Node({
     : node.suspect
       ? "stroke-warn"
       : node.root
-        ? "stroke-ink"
+        ? "stroke-root"
         : node.apart
           ? "stroke-faint"
           : "stroke-line-strong";
@@ -58,11 +58,11 @@ function Node({
         width={NODE.width}
         height={NODE.height}
         rx={8}
-        className={`${node.root ? "fill-raised" : "fill-panel"} ${border} transition-colors`}
+        className={`${node.suspect ? "fill-panel" : node.root ? "fill-root/15" : "fill-panel"} ${border} transition-colors`}
         strokeWidth={selected || node.root ? 2 : 1}
         strokeDasharray={node.suspect || node.apart ? "6 4" : undefined}
       />
-      <text x={12} y={20} className={`text-[10px] font-semibold tracking-wide uppercase ${node.suspect ? "fill-warn" : node.root ? "fill-ink" : "fill-faint"}`}>
+      <text x={12} y={20} className={`text-[10px] font-semibold tracking-wide uppercase ${node.suspect ? "fill-warn" : node.root ? "fill-root" : "fill-faint"}`}>
         {kind}
       </text>
       <text x={NODE.width - 12} y={20} textAnchor="end" className="fill-muted font-mono text-[10px]">

@@ -22,6 +22,8 @@ interface LevelStyle {
   text: string;
   bar: string;
   edge: string;
+  // A tinted surface with a colored border, for the one thing on a screen that matters most.
+  wash: string;
   // The name of the CSS variable holding the solid color, for charts.
   cssVar: string;
 }
@@ -34,6 +36,7 @@ export const SEVERITY: Record<Level, LevelStyle> = {
     text: "text-sev-critical",
     bar: "bg-sev-critical",
     edge: "border-l-sev-critical",
+    wash: "border-sev-critical/50 bg-sev-critical-bg",
     cssVar: "--sev-critical",
   },
   high: {
@@ -43,6 +46,7 @@ export const SEVERITY: Record<Level, LevelStyle> = {
     text: "text-sev-high",
     bar: "bg-sev-high",
     edge: "border-l-sev-high",
+    wash: "border-sev-high/50 bg-sev-high-bg",
     cssVar: "--sev-high",
   },
   medium: {
@@ -52,6 +56,7 @@ export const SEVERITY: Record<Level, LevelStyle> = {
     text: "text-sev-medium",
     bar: "bg-sev-medium",
     edge: "border-l-sev-medium",
+    wash: "border-sev-medium/50 bg-sev-medium-bg",
     cssVar: "--sev-medium",
   },
   low: {
@@ -61,6 +66,7 @@ export const SEVERITY: Record<Level, LevelStyle> = {
     text: "text-sev-low",
     bar: "bg-sev-low",
     edge: "border-l-sev-low",
+    wash: "border-sev-low/50 bg-sev-low-bg",
     cssVar: "--sev-low",
   },
   info: {
@@ -70,6 +76,7 @@ export const SEVERITY: Record<Level, LevelStyle> = {
     text: "text-sev-info",
     bar: "bg-sev-info",
     edge: "border-l-sev-info",
+    wash: "border-sev-info/50 bg-sev-info-bg",
     cssVar: "--sev-info",
   },
 };

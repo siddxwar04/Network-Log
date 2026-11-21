@@ -1,7 +1,7 @@
 // The frame around every screen: the navigation, the server's status, the theme switch,
 // and a warning when the server cannot be reached.
 
-import { FlaskConical, Moon, ServerOff, Sun } from "lucide-react";
+import { EyeOff, FlaskConical, Moon, ServerOff, Sun, TriangleAlert } from "lucide-react";
 import { useEffect } from "react";
 import { NavLink, Outlet, useLocation, useMatch } from "react-router";
 import { START_SERVER } from "../api/client";
@@ -99,6 +99,24 @@ function ServerStatus() {
           {llm.configured ? `LLM: ${llm.provider || "on"}` : "LLM: off"}
         </span>
       )}
+      {up && llm?.configured && health.data?.redaction && (
+        // What leaves this machine, said where it can always be seen.
+        <span
+          className={`hidden items-center gap-1 lg:inline-flex ${health.data.redaction.enabled ? "" : "font-medium text-warn"}`}
+          title={
+            health.data.redaction.enabled
+              ? "Addresses, device names and usernames are replaced by stand-ins before anything is sent to the LLM. Change it with redaction.enabled in the settings."
+              : "Addresses, device names and usernames are sent to the LLM as they are. Passwords and keys are still removed. Change it with redaction.enabled in the settings."
+          }
+        >
+          {health.data.redaction.enabled ? (
+            <EyeOff aria-hidden="true" className="size-3.5" />
+          ) : (
+            <TriangleAlert aria-hidden="true" className="size-3.5" />
+          )}
+          {health.data.redaction.enabled ? "Names hidden from the LLM" : "Names sent to the LLM"}
+        </span>
+      )}
     </span>
   );
 }
@@ -127,7 +145,7 @@ export function Layout() {
         <div className="mx-auto flex h-12 max-w-7xl items-center gap-3 px-4">
           <NavLink to="/" className="flex items-center gap-2 font-semibold tracking-tight text-ink">
             <Logo />
-            <span>netlog</span>
+            <span>CauseLine</span>
           </NavLink>
           <span aria-hidden="true" className="h-5 w-px bg-line" />
           <nav aria-label="Main" className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
@@ -157,7 +175,7 @@ export function Layout() {
             <div className="mx-auto flex max-w-7xl items-center gap-2 px-4 py-2 text-sm">
               <ServerOff aria-hidden="true" className="size-4 shrink-0 text-danger" />
               <span>
-                The netlog server is not reachable. Start it with{" "}
+                The CauseLine server is not reachable. Start it with{" "}
                 <code className="font-mono text-xs">{START_SERVER}</code>. This page checks again
                 every few seconds.
               </span>

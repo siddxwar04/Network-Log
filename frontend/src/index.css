@@ -30,6 +30,8 @@
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
+  /* The root cause of an incident: the violet of the logo, on the chain and the evidence. */
+  --color-root: var(--root);
 
   --color-sev-critical: var(--sev-critical);
   --color-sev-critical-bg: var(--sev-critical-bg);
@@ -86,7 +88,9 @@
   --ok: #1b7f4b;
   --warn: #8a5a00;
   --danger: #b4233a;
-  --elev-1: 0 1px 2px rgb(16 24 40 / 0.06);
+  --root: #5b3fd6;
+  --glow: rgb(36 86 201 / 0.07);
+  --elev-1: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 1px rgb(16 24 40 / 0.03);
   --elev-2: 0 12px 32px rgb(16 24 40 / 0.18);
 
   --sev-critical: #dc267f;
@@ -130,6 +134,8 @@
   --ok: #4cc98a;
   --warn: #f0b84a;
   --danger: #ff6b81;
+  --root: #a08cff;
+  --glow: rgb(106 160 255 / 0.09);
   --elev-1: 0 1px 0 rgb(255 255 255 / 0.03) inset;
   --elev-2: 0 16px 40px rgb(0 0 0 / 0.55);
 
@@ -159,11 +165,59 @@
   color-scheme: dark;
 }
 
+/*
+ * The log surface: where raw log lines are read. It is a dark terminal in both themes, so
+ * log text always looks like log text. Inside it the dark theme's tokens apply, which keeps
+ * every component placed there (buttons, spinners, errors) readable without special cases.
+ */
+.log-surface {
+  --panel: #0b0f15;
+  --raised: #171e28;
+  --sunken: #080b10;
+  --line: #1f2731;
+  --line-strong: #344050;
+  --ink: #e6eaf0;
+  --muted: #a0aab8;
+  --faint: #7d8899;
+  --accent: #6aa0ff;
+  --accent-ink: #061024;
+  --ok: #4cc98a;
+  --warn: #f0b84a;
+  --danger: #ff6b81;
+  --root: #a08cff;
+  background: var(--panel);
+  color: var(--ink);
+  color-scheme: dark;
+}
+
+/* A cited line lights up for a moment when it is jumped to, so the eye finds it. */
+@keyframes cite-flash {
+  from {
+    background-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+.cite-flash {
+  animation: cite-flash 1.2s ease-out;
+}
+
+/* A screen settles in instead of snapping: short, and only opacity and a few pixels. */
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.settle {
+  animation: settle 0.18s ease-out;
+}
+
 body {
-  background: var(--canvas);
+  background:
+    radial-gradient(1200px 420px at 50% -120px, var(--glow), transparent 70%),
+    var(--canvas);
+  background-repeat: no-repeat;
   color: var(--ink);
   font-family: var(--font-sans);
-  font-feature-settings: "tnum" 0;
   -webkit-font-smoothing: antialiased;
 }
 

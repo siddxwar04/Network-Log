@@ -54,7 +54,7 @@ def test_a_perfect_detector_scores_100_percent():
                for name, lines, exp in labelled()]  # fmt: skip
     summary = summarize(results)
     overall = summary["overall"]
-    assert overall["expected"] == overall["found"] == 9
+    assert overall["expected"] == overall["found"] == 11
     assert overall["precision"] == overall["recall"] == overall["f1"] == 1.0
     for name in ("root_cause", "severity", "devices"):
         assert summary[name]["rate"] == 1.0
@@ -81,7 +81,7 @@ def test_a_wrong_detector_scores_badly():
     overall = summarize(results)["overall"]
     assert overall["found"] == 0 and overall["recall"] == 0.0
     assert overall["precision"] == 0.0 and overall["f1"] == 0.0
-    assert overall["false_alarms"] == 2 * 9 + 2  # every wrong report, plus the two made up
+    assert overall["false_alarms"] == 2 * 11 + 2  # every wrong report, plus the two made up
     kinds = {item["kind"] for item in problems(results, "tuned")}
     assert kinds == {"miss", "false alarm"}
 
