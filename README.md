@@ -1,183 +1,82 @@
-# Network Log Summarizer and Incident Explainer
+# netlog: Network Log Summarizer and Incident Explainer
 
-Reads network logs, finds the incidents in them, and explains what happened in plain English, with every statement linked to the log lines that prove it.
+Reads router, switch, firewall and server logs, finds the incidents in them with deterministic rules, and explains each one in plain English, with every statement linked to the log lines that prove it.
 
-> **Status: in development.** The offline analyzer is complete: one command reads a log file, detects problems with 16 rules, groups them into incidents, names a likely root cause for each and explains it in plain English, with or without an AI model. The web interface works: upload a file or pick a demo, watch it being analyzed, read the dashboard, and open each incident with its explanation beside the log lines it cites, a timeline, a causal chain and a post-mortem to download. Rules can be tuned in a file of your own, devices can send their logs live, and serious live incidents raise a chat alert. Its accuracy is measured on 170 generated files the rules were never tuned on, and the whole tool starts with one Docker command. Still to come: testing on logs from real devices. See [Progress](#progress) for exactly what works today and what is left.
+> **[GIF PLACEHOLDER: hero.gif]** Capture: drop `data/scenarios/02_cascade.log` on the upload page, the stepper runs to the dashboard, open the Critical incident, click a citation such as `[2260]` and show the log line it scrolls to. About 15 seconds.
 
 ## The problem
 
-At 2:14 am a cable between two routers goes bad. Within a minute, five devices write about 3,000 log lines: interfaces going down, routing sessions dropping, tunnels failing. An engineer reading those lines by hand needs twenty minutes to work out that it was one cable.
+At 2:14 am a cable between two routers goes bad, and within a minute five devices write about 3,000 log lines: interfaces going down, OSPF neighbors lost, BGP sessions dropping. An engineer reading them by hand needs twenty minutes to work out that it was one cable. Large teams have a SIEM for this; small IT teams, college labs and homelabs usually have `grep`.
 
-Large teams solve this with a SIEM such as Splunk or the Elastic stack. Small IT teams, college labs and homelabs usually have neither the budget nor the time to run one, and are left with `grep`.
+## What it does
 
-## The goal
+- **Finds incidents with rules, not guesswork.** 16 rules for link flaps, failed links, BGP and OSPF drops, DHCP exhaustion, brute-force logins, port scans, DNS failures and more, each with a severity and the reason for it.
+- **Turns many alerts into one incident with a root cause.** Twelve findings on four routers become one incident: R1's interface went down, and everything else followed, with a confidence and what the logs cannot tell.
+- **Explains it in plain English, with citations.** A summary, a timeline, what to check and the read-only commands that confirm it, each statement ending in line numbers you can click.
+- **Works with the AI switched off.** An LLM can write the explanation, but only from evidence the rules already found, and its answer is checked before it is shown. Without one, built-in explanations are used.
+- **Runs on files or live.** Upload a file, run one command on it, or point your devices at it and get a chat alert when something serious starts.
 
-Given the same 3,000 lines, the finished tool should answer:
+## Try it
 
-> **One incident, Critical.** The link between R1 and R2 failed at 02:14:07, and everything else is a consequence. Check the cable or SFP on R1 `GigabitEthernet0/1`.
+With Docker (Docker Desktop on Windows or macOS, or Docker Engine with Compose 2.24 or newer):
 
-Each part of that answer links to the log lines behind it.
+```powershell
+git clone https://github.com/siddxwar04/Network-Log.git
+cd Network-Log/deploy
+docker compose up -d --build
+```
 
-| Step | What it means | Today |
-|---|---|---|
-| Understand network logs | Cisco IOS, Linux authentication and DHCP to start with | Works |
-| Detect problems with rules, not guesswork | Link flaps, routing drops, brute-force logins, DHCP exhaustion and more | Works |
-| Say how serious each one is, and why | A fixed, testable severity with a one-line reason | Works |
-| Group related alerts | One failed link that takes down OSPF and BGP on three routers becomes one incident with one root cause | Works |
-| Explain in plain English | An AI model writes the explanation, but only from evidence the rules already found, and its answer is checked before it is shown | Works; not yet tried against a real model |
-| Work without the AI | Detection, grouping and reports run fully offline, with a built-in explanation in place of the AI's | Works |
+Then open http://localhost:8080 and pick a demo scenario. It runs in demo mode until you add an LLM key. [docs/INSTALL.md](docs/INSTALL.md) covers settings, keys, live devices, backups and upgrades.
+
+> **[LINK PLACEHOLDER: live demo]** Add the address of a hosted demo here, or remove this line.
+
+Without Docker, with Python 3.11 or newer (commands for Windows PowerShell; on Linux and macOS use `.venv/bin/`):
+
+```powershell
+git clone https://github.com/siddxwar04/Network-Log.git
+cd Network-Log
+python -m venv .venv
+.venv\Scripts\python -m pip install -e ".[dev]"
+.venv\Scripts\netlog analyze data\scenarios\02_cascade.log --year 2026
+```
 
 ## How it works
 
 ```
- log file
+ log file or live syslog
     |
     v
- +---------------------+
- | Read and parse      |   time, device, message type, interface, addresses      built
- +---------------------+
+ Read and parse    time, device, message type, interface, addresses, users
     |
     v
- +---------------------+
- | Mine templates      |   thousands of similar lines become a few patterns      built
- +---------------------+
+ Mine templates    thousands of similar lines become a few patterns
     |
     v
- +---------------------+
- | Detect and score    |   rules find each kind of problem and rate it           built
- +---------------------+
+ Detect            rules from a data file produce findings, each with a severity
     |
     v
- +---------------------+
- | Correlate           |   related findings become one incident with a cause     built
- +---------------------+
+ Correlate         related findings become one incident, ordered into cause and effect
     |
     v
- +---------------------+
- | Explain             |   plain-English summary, checked against the evidence   built
- +---------------------+
+ Explain           a small evidence pack -> LLM or built-in template -> validator
     |
     v
- report, dashboard and alerts (built)
+ report, web interface, live incidents, alerts
 ```
 
-Two design rules shape the project:
+Everything up to and including Correlate is ordinary deterministic code: the same file always gives the same incidents, severities and root causes, and every step is tested and measured. The LLM only writes the explanation of an incident the code has already found. It never decides whether something is an incident or how serious it is, never sees the log file, and can be switched off. Log content is treated as untrusted throughout: a username or hostname is never executed, rendered as HTML or followed as an instruction. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) goes through each stage.
 
-1. **Rules decide, the AI explains.** Parsing, detection, correlation and severity are ordinary deterministic code that can be tested and measured. The AI model never decides whether something is an incident or how serious it is, and it never sees raw log files.
-2. **Log content is untrusted.** Usernames, hostnames and messages can be written by an attacker, so nothing from a log is ever executed, rendered as HTML or treated as an instruction.
+## Supported logs and detected incidents
 
-## Progress
-
-| Stage | What it covers | Status |
-|---|---|---|
-| Event schema | One standard shape for every log line | Done |
-| Test log generator | Realistic logs with known incidents and an answer key | Done |
-| File reading and syslog parsing | Time and device from every line, RFC 3164 and RFC 5424 | Done |
-| Vendor parsing | Cisco IOS, Linux auth, DHCP message content | Done |
-| Storage and template mining | Searchable database, pattern extraction | Done |
-| Detection rules and severity | 16 rules, each finding with a severity and a reason | Done |
-| Command-line tool | One command, a report in text, Markdown or JSON | Done |
-| Correlation | Grouping, causal chain, root cause, confidence | Done |
-| AI explanation | Cited explanations with a validator, a built-in fallback, junior and senior wording | Done |
-| Web API | Upload, pipeline status, events, incidents, explanations, timeline | Done |
-| Web interface | Upload, processing, dashboard, incident page with clickable citations, timeline, causal chain, post-mortem download, demo mode | Done |
-| User-editable rules | Overrides, rules of your own, critical devices, a command to try a rule file | Done |
-| Live syslog | Devices send logs over UDP or TCP; incidents open, grow and close as things happen | Done |
-| Alerts | Slack or JSON webhook messages for serious live incidents, with a rate limit, digests and silences | Done |
-| One-command install | Docker Compose and an install guide | Done |
-| DNS and firewall logs | Cisco ASA, iptables, BIND and dnsmasq, with rules for port scans and DNS failures | Done |
-| Evaluation | Measured accuracy on 160 held-out files and 10 noise files, with every miss listed | Done |
-| Real-log testing | Results on logs from real devices the tool was not built around | Planned |
-| Final documentation and review | This page finished, and a last sweep before publishing | Planned |
-
-### What works today
-
-- **One command analyzes a file.** `netlog analyze router.log` prints what was found, most severe first, with the log lines that prove it. It runs fully offline.
-- **Understands Cisco IOS, Linux sshd and sudo, ISC dhcpd, Cisco ASA and iptables (UFW) firewalls, and BIND and dnsmasq DNS servers** on top of both syslog formats. Classic syslog lines carry no year and no timezone, so both are assumed and the report says so.
-- **Detects 16 kinds of problem:** flapping and failed interfaces, BGP and OSPF drops, DHCP exhaustion, brute-force logins, config changes, CPU and memory trouble, reloads, MAC flapping, port scans and sweeps, DNS servers failing, and machines looking up many names that do not exist. Rules are plain settings in a file, not code.
-- **Gives every finding a severity and a reason.** 300 failed logins that all fail are Medium; the same attack ending in one successful login is Critical.
-- **Groups findings into incidents.** Twelve alerts from four routers become one incident. Findings are joined only when they are close in time and connected; an attack and a link fault in the same minute stay separate.
-- **Names a likely root cause, with a confidence level.** It orders each incident into cause and effect using what is known about how protocols fail, and it lists what the logs cannot tell. A configuration change shortly before a failure is shown as a suspect, never as proven.
-- **Works out who is who from the logs.** Logs never say which address belongs to which router. The tool infers it from adjacency messages, and leaves unknown what it cannot establish.
-- **Explains each incident.** Under every incident the report gives a summary, a timeline, the likely cause, what to check and the read-only commands that confirm it, for a junior or a senior reader (`--audience`). Each statement names the lines of the log file it rests on. Steps that would change a device are marked `REVIEW BEFORE RUNNING`.
-- **Uses an AI model only if you set one up, and checks what it writes.** The model sees a short evidence pack with addresses and names replaced by stand-ins, never the log file. Its answer is rejected if it cites a line that does not exist, mentions an interface or address that is not in the evidence, or contradicts the severity or root cause the rules decided. A rejected answer is asked for once more, then replaced by the built-in explanation. The report says which of the two wrote each explanation.
-- **Collapses noise.** A 50,000-line file reduces to 28 message patterns.
-- **Never drops a line.** A line no parser understands is kept and counted, and the tool reports what share of the file it understood.
-- **Treats log content as untrusted.** A username such as `admin from 10.0.0.1 port 22` does not fool the parsers, and a log line cannot inject formatting into a report.
-- **Has a web interface.** Upload a file or pick a demo scenario, watch the pipeline run, read the dashboard, and open an incident to see its explanation beside the log lines it cites, a timeline of every device's events, and the causal chain drawn as a diagram. Each incident can be downloaded as a post-mortem in Markdown. With no API key the app runs in demo mode and says so.
-- **Lets you tune the rules without code.** A rule file of your own changes thresholds, windows and severities, switches rules off, adds new rules and lists your critical devices. `netlog rules test` shows what a rule file would find before you rely on it, and a mistake is refused with a message naming the rule and the setting.
-- **Watches the network live.** Devices send their syslog straight to netlog over UDP or TCP. Every few seconds the same rules run over the recent messages: an incident opens when it is first found, grows as evidence arrives, keeps one id the whole time, and closes after five quiet minutes. The listener binds to this computer only unless told otherwise, can be limited to a list of senders, and rate-limits each sender. `netlog replay` sends a sample log to it as if it were happening now.
-- **Starts with one command.** `docker compose up -d --build` in `deploy/` starts the API, the live listener and the web interface together, in demo mode until you add a key. Every setting is in one commented `.env` file, data lives in a Docker volume that survives upgrades, and both containers run without root. See [docs/INSTALL.md](docs/INSTALL.md).
-- **Sends a chat alert when something serious starts.** A short message to Slack (or anything that takes Slack's format) or to any JSON webhook: the severity, what broke, the likely cause with its confidence, the devices, the start time and a link to the incident. One incident gives one alert, plus one more only if it gets worse. Floods are capped and summed up in a digest, and a device, an incident type or everything can be silenced for planned maintenance. Webhook addresses stay in `.env` and never appear in logs or API answers.
-
-On scenario 2, the live listener sends exactly one alert:
-
-```
-CRITICAL: BGP session from R1 to 10.255.0.2 went down, with 11 related findings on R1, R2, R3, R4
-Likely cause: Interface GigabitEthernet0/1 on R1 was down for 1m 5s (high confidence)
-Devices: R1, R2, R3, R4 | started 2026-03-03 02:46:11 UTC
-Open the incident
-```
-
-### What is still to come
-
-- **Explanation quality, measured.** Citation validity and fallback rate of real LLM answers, and scores from people using the [manual rubric](docs/EXPLANATION_RUBRIC.md).
-- **Logs from real devices.** So far every log is generated. Results on logs the tool was not built around, including from a virtual lab of real router images.
-- **Finishing touches.** This page completed, and a final review before publishing.
-
-## Measured accuracy
-
-_These are synthetic logs from this project's own generator, so the numbers show the tool is consistent with its design, not that it works on every real network._
-
-The evaluation harness runs the tool on logs whose answers are known. The **held-out** set is 160 files made fresh for the test, 20 per kind of incident, which the rules were never tuned on: some incidents just above a rule's threshold, some far above, 13 built to fall just short and give nothing, with 2,000 to 10,000 lines of normal traffic around them and cascades reaching 2 to 4 routers. The tuned set is the ten sample logs below; the noise set is 10 files of normal traffic only, up to 50,000 lines. Measured from the logs alone, without a topology file:
-
-| Set | Files | Lines | Incidents | Found | False alarms | Precision | Recall | Root cause | Severity | Devices |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| **Held-out** | 160 | 894,486 | 167 | 167 | 0 | 100% | 100% | 100% | 100% | 88.0% |
-| Tuned | 10 | 94,918 | 9 | 9 | 0 | 100% | 100% | 100% | 100% | 88.9% |
-| Noise only | 10 | 143,014 | 0 | 0 | 0 | | | | | |
-
-A found incident matches an expected one when it is of the same type, its likely cause is on the same device, and their times overlap. An unexpected incident at Medium or above is a false alarm. The tool reads, detects and correlates about 5,000 lines a second, and 94,918 lines of the sample logs reduce to 299 message patterns.
-
-**Why these numbers are weaker than they look.** The held-out files come from the same generator as the tuned ones, with the same message wording: they vary strength, volume and device count, not how devices word their messages, so a perfect score here says nothing about wording the tool has not seen. The rules and the generator were also written from the same understanding of how protocols fail. The one gap the harness does show is real: when a switch reloads, the router whose link to it drops is left out of the incident in all 21 such files, because nothing in the logs says the two are cabled together and the tool does not guess; a topology file fills it in. Explanations are not measured yet. Logs from real devices are the next test.
-
-The full results, with every item listed, are in [eval/results/latest.md](eval/results/latest.md), and on the Accuracy page of the web app.
-
-Here is the report for a log where one failed interface, hidden in 5,000 lines, took down routing on four routers (most evidence lines and the explanation left out, the rest shortened):
-
-```
-Verdict
-  1 incident: 1 critical (12 findings on 4 devices)
-
-Incidents
-  [CRITICAL] Interface GigabitEthernet0/1 on R1 was down for 8m 36s
-      When          2026-03-03 02:46:11 to 02:46:52 UTC (41s)
-      Devices       R1, R2, R3, R4
-      Findings      12 findings: 6 OSPF adjacency lost, 6 BGP session down
-      Likely cause  Interface GigabitEthernet0/1 on R1 was down for 8m 36s
-      Confidence    High: every finding is accounted for, the timing matches how the protocols
-                    behave, and 4 devices report it.
-      Severity      Critical: the most serious finding is "BGP session from R1 to 10.255.0.2 went
-                    down".
-      What happened
-        Interface GigabitEthernet0/1 on R1 was down for 8m 36s
-            2260  Mar  3 02:46:12 R1 ... %LINK-3-UPDOWN: Interface GigabitEthernet0/1, changed state to down
-           -> OSPF adjacency lost on R1 (3 findings) (at once)
-              Why: OSPF runs over that interface, so the router dropped its neighbors there the
-                   moment the interface went down.
-              -> BGP session down on R1 (3 findings) (+20s to +24s) [plausible]
-           -> BGP session down on R2, R3, R4 (+23s to +27s)
-           -> OSPF adjacency lost on R2, R3, R4 (+35s to +41s)
-              Why: The other routers stopped hearing OSPF hellos from the device whose interface
-                   failed, and gave up on it when the 40-second dead timer ran out.
-      Not known from these logs
-        - Why the interface went down. The logs show that it did, not whether a cable, an optic or
-          the device at the other end was at fault.
-        - Neighbor addresses not matched to a device in these logs: 10.255.0.2, 10.255.0.3,
-          10.255.0.4. List them in a topology file to say which device each one is.
-```
-
-## What it detects
+| Source | What is read |
+|---|---|
+| Cisco IOS and IOS XE | Interfaces, line protocol, BGP, OSPF, logins, config changes, reloads, CPU and memory, MAC flapping. Any other message keeps its code and severity |
+| Cisco ASA (and FTD) | Denied, built and torn-down connections, access-list hits, AAA and login rejections |
+| Linux iptables and UFW | Packet logs, the action read from the rule's prefix |
+| Linux authentication | sshd, sudo and PAM sessions |
+| ISC dhcpd (and Infoblox) | DISCOVER, OFFER, REQUEST, ACK, NAK, RELEASE, DECLINE, no free leases |
+| BIND (and Infoblox), dnsmasq | Queries, answers and their codes, failures |
+| Syslog headers | RFC 3164 with or without a year, RFC 5424, ISO 8601 times, lines straight from Cisco devices |
 
 | Rule | Detects | Default trigger | Severity |
 |---|---|---|---|
@@ -193,101 +92,104 @@ Incidents
 | Device reload | A reload being requested | Any request | High |
 | Device restart | A device starting up, requested or not | Any restart | Critical |
 | MAC flapping | A MAC address moving between ports, the usual sign of a loop | 3 warnings in one VLAN in 5 minutes | High |
-| Port scan | One address trying many ports and being refused by a firewall | 25 different ports in 1 minute | Medium; High if a connection from it is then let through |
+| Port scan | One address trying many ports and being refused | 25 different ports in 1 minute | Medium; High if a connection from it is then let through |
 | Port sweep | One address trying one port on many machines | 20 different addresses in 1 minute | Medium |
 | DNS failures | A DNS server failing to answer | 20% of queries, at least 20, in 5 minutes | Medium; High at half or more |
 | Names that do not exist | One machine looking up many names that do not exist, a sign of some malware | 50 different names in 5 minutes | Medium |
 
-Every threshold is a setting in `backend/netlog/config/rules.toml`. You can change any rule's threshold, window or severity, switch it off, list your critical devices, and add rules of your own in `data/rules.toml`, without editing that file; `netlog rules test my-rules.toml router.log` shows what a rule file would find before you rely on it. See [docs/WRITING_RULES.md](docs/WRITING_RULES.md). A deliberate shutdown, a single unplugged cable, one mistyped password and everyday refused connections are not reported as problems.
+A deliberate shutdown, a single unplugged cable, one mistyped password and everyday refused connections are not reported as problems. [docs/RULES.md](docs/RULES.md) describes each rule: its log signature, usual causes, and when it can be wrong.
 
-[docs/RULES.md](docs/RULES.md) describes each rule in full: its log signature, usual causes, and when it can be wrong.
+## Results
 
-## Getting started
+_These are synthetic logs from this project's own generator, so the numbers show the tool is consistent with its design, not that it works on every real network._
 
-### With Docker
+The evaluation harness runs the tool on logs whose answers are known. The **held-out** set is 160 files made fresh for the test, 20 per kind of incident, which the rules were never tuned on: some incidents just above a threshold, some far above, 13 built to fall just short and give nothing, cascades reaching 2 to 4 routers. The **tuned** set is the twelve sample logs; the **noise** set is 10 files of normal traffic only. Measured from the logs alone, without a topology file:
 
-The quickest way to try it. Needs Docker Desktop (Windows, macOS) or Docker Engine with Compose 2.24 or newer (Linux):
+| Set | Files | Lines | Incidents | Found | False alarms | Precision | Recall | Root cause | Severity | Devices |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **Held-out** | 160 | 894,486 | 167 | 167 | 0 | 100% | 100% | 100% | 100% | 88.0% |
+| Tuned | 12 | 104,912 | 11 | 11 | 0 | 100% | 100% | 100% | 100% | 90.9% |
+| Noise only | 10 | 143,015 | 0 | 0 | 0 | | | | | |
 
-```powershell
-git clone https://github.com/siddxwar04/Network-Log.git
-cd Network-Log/deploy
-docker compose up -d --build
+A found incident matches an expected one when it is of the same type, its likely cause is on the same device, and their times overlap. An unexpected incident at Medium or above is a false alarm. In the latest run it read, detected and correlated 4,000 to 4,700 lines a second on a laptop, and the 104,912 lines of the sample logs reduced to 396 message patterns.
+
+**Why these numbers are weaker than they look.** The held-out files come from the same generator as the tuned ones, with the same wording, and the rules and the generator were written from the same understanding of how protocols fail. The held-out set does not yet cover port scans or DNS failures. The one gap it shows is real: when a switch reloads, the router whose link to it drops is left out of the incident, because nothing in the logs says the two are cabled together; a topology file fills it in. Explanations are not measured yet. Full results: [eval/results/latest.md](eval/results/latest.md).
+
+**On real logs.** The tool was then run on 5,037 lines of public logs from real devices it was not built around: OpenSSH and Red Hat servers, Cisco IOS and ASA, iptables and Infoblox. At first it read the header of 90% of lines and recognized the message of 27%; Cisco ASA was the worst at 28%. After fixing the formats it did not know, those figures are 99% and 49%, with ASA at 93%. It found all five password-guessing attacks above its threshold in the OpenSSH log, with no false alarms in any file, but it misses three attacks on the older Red Hat server, whose PAM-only messages the brute-force rule does not count. No real network failure, such as a link or a routing session going down, has been tested yet. [docs/REAL_LOG_TESTING.md](docs/REAL_LOG_TESTING.md) has the details, what still fails, and the rule changes proposed but not made.
+
+## How it avoids made-up answers
+
+- **The LLM sees an evidence pack, not the log.** A short case file of at most 3,000 tokens: the incident's facts as the rules decided them, its findings and a few representative lines, each with an id. Addresses, hostnames and usernames are replaced by stand-ins before it leaves the machine, and secrets are removed.
+- **Every statement must cite the pack.** The answer is a fixed structure, and each statement names the findings or lines it rests on. The report turns them into line numbers of the original file.
+- **A validator checks the answer.** It is rejected if a citation does not exist, if it names an interface, address, device or time that is not in the pack, if it contradicts the severity or root cause, if it contains links or HTML, or if a step that changes a device is not marked as one. It is asked for once more with the reasons, and then replaced by a built-in explanation, which passes the same checks. Every report says which of the two wrote it.
+- **It is tested against an attack.** Sample log 9 holds a brute-force attack whose usernames are written to talk an LLM into calling it harmless. The rules find it the same way, and an answer that lowers the severity or says nothing happened is rejected.
+
+## Screenshots
+
+> **[SCREENSHOT PLACEHOLDER: dashboard.png]** Capture: the dashboard of `08_noise_50k.log` or `02_cascade.log`, showing the stat tiles, the events-over-time chart with an incident band, and the incident cards.
+
+> **[SCREENSHOT PLACEHOLDER: incident.png]** Capture: the incident page of `02_cascade.log`, with the explanation on one side and the evidence lines on the other, a citation hovered to show its preview.
+
+> **[SCREENSHOT PLACEHOLDER: timeline.png]** Capture: the timeline and causal chain of the same incident, R1 on top, the OSPF and BGP markers on R2 to R4 following it.
+
+## Using it for real
+
+- **Your own files.** `netlog analyze router.log` prints a report; `--format markdown -o report.md` writes one for a ticket, and `netlog postmortem router.log` drafts a post-mortem. Every option is in [docs/CLI.md](docs/CLI.md).
+- **Live syslog.** Point devices at the listener over UDP or TCP. Incidents open, grow and close as things happen, and keep one id throughout. See [Live syslog](docs/CLI.md#live-syslog), including what plain syslog's lack of authentication means.
+- **Alerts.** A Slack or JSON webhook message when a serious incident starts, one more only if it gets worse, with a rate limit, digests and silences for maintenance. See [Alerts](docs/CLI.md#alerts).
+- **Your own rules.** Change any threshold, window or severity, switch rules off, list your critical devices or add rules, in a file of your own; `netlog rules test my-rules.toml router.log` shows what it would find. See [docs/WRITING_RULES.md](docs/WRITING_RULES.md).
+- **An LLM of your own.** Copy `.env.example` to `.env`, set `NETLOG_LLM_PROVIDER=openai` and your key in `NETLOG_LLM_API_KEY`. Each incident costs one request, answers are cached, and `--no-llm` switches it off for a run.
+
+## Limitations
+
+- **Tested mostly on synthetic logs.** The accuracy figures come from this project's own generator. Real logs have been tested only for reading and for password guessing; no real link, routing or DHCP failure has been tested yet. See [docs/REAL_LOG_TESTING.md](docs/REAL_LOG_TESTING.md).
+- **Rule coverage is limited.** 16 rules for common failures. Anything they do not describe is not found, and the CPU, memory and MAC flapping rules have no test scenario yet.
+- **A root cause is a best reading, not a verdict.** It comes from fixed rules about what can cause what, with a stated confidence. Without a topology file the tool cannot know which cable goes where.
+- **Explanations are not yet measured against a real LLM.** The validator, retry and fallback are tested with stand-in answers, including hostile ones.
+- **No login, single machine.** The web app and API are meant for one person's machine, published on this computer only by default, without HTTPS.
+- **Plain syslog is unauthenticated.** Anyone who can reach the listener can send lines that look like they come from your routers. The listener binds to this computer by default and can be limited to a list of senders.
+- **Cisco first.** Cisco IOS and ASA are covered in depth; IOS XR, NX-OS, Juniper and other vendors are not read yet.
+
+## Roadmap
+
+- Test on logs from a lab of real router images, with link, routing and DHCP failures caused on purpose.
+- Decide on the brute-force rule changes proposed after real-log testing.
+- Measure explanations with a real LLM: citation validity, fallback rate, and scores from people using the [manual rubric](docs/EXPLANATION_RUBRIC.md).
+- Add held-out scenarios for port scans, DNS failures, CPU, memory and MAC flapping.
+- More vendors: IOS XR, NX-OS, Juniper.
+
+## Tech stack and layout
+
+Backend: Python with FastAPI, pydantic, SQLite, Drain3, pytest and ruff. Frontend: React with Vite, TypeScript, Tailwind and Apache ECharts. Install: Docker Compose.
+
+```
+backend/netlog/      the package: cli.py and the stages, one folder each
+  ingestion/  parsers/  storage/  mining/  detection/  correlation/
+  llm/  redaction/  report/  api/  live/  alerts/  config/
+backend/tests/       tests, with golden files in tests/golden/
+frontend/            web interface
+generator/           test log generator, independent of the backend
+eval/                evaluation harness, held-out sets, results/
+data/scenarios/      the twelve sample logs with their answer keys
+deploy/              Docker images, Compose file, settings example
+docs/                reference documentation
 ```
 
-Then open http://localhost:8080 and pick a demo scenario. [docs/INSTALL.md](docs/INSTALL.md) covers settings, adding an LLM key, pointing devices at the live listener, backups, upgrades and removal.
-
-### From source
-
-For development, and for the `netlog` command. Requires Python 3.11 or newer. Commands are for Windows PowerShell.
+### For development
 
 ```powershell
-git clone https://github.com/siddxwar04/Network-Log.git
-cd Network-Log
-python -m venv .venv
-.venv\Scripts\python -m pip install -e ".[dev]"
-```
-
-Analyze one of the sample logs:
-
-```powershell
-.venv\Scripts\netlog analyze data\scenarios\04_brute_force.log --year 2026
-```
-
-Then try your own file, or other options:
-
-```powershell
-.venv\Scripts\netlog analyze router.log --min-severity high
-.venv\Scripts\netlog analyze router.log --format markdown -o report.md
-.venv\Scripts\netlog analyze router.log --findings
-.venv\Scripts\netlog analyze router.log --audience junior
-.venv\Scripts\netlog analyze router.log --no-llm
-.venv\Scripts\netlog analyze data\scenarios\07_device_reload.log --year 2026 --topology data\scenarios\topology.toml
-```
-
-Measure its accuracy: generate the held-out and noise sets once (about 30 seconds), then run the harness (about 5 minutes). It writes `eval/results/latest.md` and `latest.json`:
-
-```powershell
+.venv\Scripts\python -m pytest
+.venv\Scripts\python -m ruff check .
+.venv\Scripts\python -m eval.scorecard --topology data\scenarios\topology.toml
 .venv\Scripts\python -m eval.heldout
 .venv\Scripts\python -m eval.harness
-```
-
-Or check the tool quickly against the answer keys of the twelve sample logs only:
-
-```powershell
-.venv\Scripts\python -m eval.scorecard --topology data\scenarios\topology.toml
-```
-
-See the evidence pack of an incident: the short, numbered case file that is the only thing an LLM will be shown, with addresses and names replaced by stand-ins. Without `--show` it lists the size of every pack:
-
-```powershell
 .venv\Scripts\python -m eval.packs --show 02_cascade
-.venv\Scripts\python -m eval.packs
-```
-
-Every report explains its incidents with built-in templates. To have an LLM write the explanations instead, copy `.env.example` to `.env` and set `NETLOG_LLM_PROVIDER=openai` and your key in `NETLOG_LLM_API_KEY`; `netlog analyze` then makes a paid request for each incident it lists, and `--no-llm` switches that off for one run. The command below shows one scenario's explanations on their own. Every answer is checked against the evidence pack before it is shown: its citations must exist, it may not mention anything that is not in the pack, and it may not contradict what the tool decided. An answer that fails is asked for once more; if that fails too, a built-in explanation written from fixed templates is used instead. Answers that pass are cached, so the same incident is only paid for once. Without a key the command prints the built-in explanation and says so.
-
-```powershell
-.venv\Scripts\python -m eval.explain 02_cascade
 .venv\Scripts\python -m eval.explain 02_cascade --mode junior
-```
-
-Count how the explanations of every sample incident fared against those checks. With a provider configured it makes paid requests, so it does nothing until you add `--yes`:
-
-```powershell
-.venv\Scripts\python -m eval.validity
-```
-
-See [docs/CLI.md](docs/CLI.md) for every option, the exit codes and the JSON format.
-
-Start the web API, which puts the same pipeline behind HTTP for a browser or another program:
-
-```powershell
+.venv\Scripts\python -m generator --scenario cascade --seed 5 --out data/tmp
 .venv\Scripts\python -m uvicorn netlog.api.app:app
 ```
 
-Then open http://127.0.0.1:8000/docs. The page lists every endpoint and lets you try each one: upload a file with `POST /api/uploads`, poll `GET /api/uploads/{id}/status` until the stage is `done`, then read `GET /api/uploads/{id}/incidents`. The API has no login and is meant for one person's machine; do not expose it to a network you do not trust. Uploaded files are kept in `data/uploads/` under generated names and results in `data/netlog.db`; the size limit and the browser origins allowed to call it are settings under `[api]`.
-
-To use it in the browser, keep the API running and start the web interface in a second PowerShell window. It needs Node.js 20 or newer; the first `npm install` takes a few minutes.
+The scorecard checks the sample logs against their answer keys in seconds; the harness takes about 5 minutes after `eval.heldout` has generated its sets once. `eval.packs` shows the evidence pack an LLM would see, and `eval.explain` an incident's explanation (the built-in one without a key). The API serves its documentation at http://127.0.0.1:8000/docs. For the web interface, keep the API running and, with Node.js 20 or newer:
 
 ```powershell
 cd frontend
@@ -295,117 +197,19 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:5173. Drop a log file on the page, or click a demo scenario, and watch the pipeline work through its stages; the dashboard of the file opens when it is done. Open an incident to read its explanation beside the log lines it rests on: every statement ends in line numbers you can click to find the line, the timeline shows each device's events in time, and the causal chain draws what caused what. Download post-mortem saves the incident as a Markdown document for a team to review and file; `netlog postmortem router.log` writes the same from the command line. Run the frontend's own tests with `npm test` in the same folder.
+Then open http://localhost:5173. `npm test` runs the frontend's tests.
 
-Devices can also send their logs straight to netlog as things happen: start the API with `$env:NETLOG_LIVE = "1"` first, and the Live page shows incidents opening, growing and closing. `netlog replay data\scenarios\02_cascade.log --speed 20 --start 02:44` sends a sample to it, as if now. See [Live syslog](docs/CLI.md#live-syslog) for pointing a router at it and what plain syslog's lack of authentication means.
+### Documentation
 
-To get a chat message when the listener finds something serious, put a webhook address in `.env`: `NETLOG_ALERT_SLACK_URL` for Slack or anything that takes its format, `NETLOG_ALERT_WEBHOOK_URL` for plain JSON. Then restart the API and check the setup:
-
-```powershell
-.venv\Scripts\netlog alerts test
-.venv\Scripts\netlog alerts silence --device R1 --for 2h --reason "IOS upgrade"
-.venv\Scripts\netlog alerts list
-```
-
-See [Alerts](docs/CLI.md#alerts) for when an alert is sent, the rate limit, silences and hiding addresses and usernames in alert text.
-
-With no API key set up, the app runs in demo mode and says so: nothing is sent anywhere, the demo scenarios use explanations an LLM wrote earlier and that are stored in `data/scenarios/explanations.json` (once that file has been generated with `netlog demo-explanations --yes`), and other files get the built-in explanations.
-
-Run the tests:
-
-```powershell
-.venv\Scripts\python -m pytest
-```
-
-Generate a fresh test log:
-
-```powershell
-.venv\Scripts\python -m generator --scenario cascade --seed 5 --out data/tmp
-```
-
-On Linux or macOS, use `.venv/bin/` in place of `.venv\Scripts\`.
-
-## Sample logs
-
-The `data/scenarios/` folder holds generated logs, each with a `.labels.json` file that states which incident is inside, its root cause and the exact lines that belong to it.
-
-| File | What happens |
-|---|---|
-| `01_link_flap` | An interface on R1 goes down and up 12 times in about 5 minutes |
-| `02_cascade` | R1 loses its core link; OSPF and BGP to R1 drop on three other routers |
-| `03_config_bgp` | A user changes R2's config and a BGP session drops 20 seconds later |
-| `04_brute_force` | 400 failed SSH logins from one address, then a successful one |
-| `05_dhcp_exhaustion` | The DHCP pool runs out and new devices are refused |
-| `06_port_scan` | One address on the internet tries 500 ports on the firewall and is refused |
-| `07_device_reload` | A switch is reloaded: minutes of silence, then boot messages |
-| `08_noise` | A normal day with no incident, firewall and DNS servers included |
-| `08_noise_50k` | The same normal day at 50,000 lines, for checking speed and false alarms |
-| `09_prompt_injection` | The brute force again, with usernames written to talk an LLM into hiding it |
-| `10_overlap` | Two unrelated incidents at the same time |
-| `11_dns_failure` | The DNS resolver cannot reach the internet for 10 minutes; most queries fail |
-
-The noise in these files is built to resemble incidents without being one: a single port going down and up, an administrator shutting a port on purpose, one mistyped password, addresses on the internet trying a couple of ports, clients looking up names that do not exist. Detection rules have to tell the difference.
-
-See [generator/README.md](generator/README.md) for the simulated network, the line formats and the label format.
-
-## Repository layout
-
-```
-backend/
-  netlog/
-    cli.py           the netlog command
-    rules_cli.py     netlog rules test
-    alerts_cli.py    netlog alerts test, list, silence, unsilence
-    schema.py        the normalized event
-    ingestion/       reading files
-    parsers/         syslog, Cisco IOS, Linux auth and DHCP parsers
-    storage/         SQLite database
-    mining/          template mining and dedup
-    detection/       rule engine and severity
-    config/          default settings and the built-in rules
-    report/          text, Markdown and JSON reports
-    correlation/     incidents, topology, cause and effect
-    llm/             the evidence pack, the prompt, the provider adapter, the cache,
-                     the validator and the built-in explanations
-    redaction/       hiding addresses and names before they leave the machine
-    api/             the web API and the background pipeline
-    live/            the live syslog listener, incident tracking and replay
-    alerts/          when to alert, message formats and webhook delivery
-  tests/
-generator/           test log generator
-eval/                the evaluation harness and held-out sets, scorecard, pack sizes,
-                     a command to try an explanation, validity counts
-  results/           the latest accuracy results
-data/scenarios/      generated logs with label files
-deploy/              Docker images, Compose file, settings example, smoke test
-docs/                reference documentation
-frontend/            web interface (React, Vite, Tailwind)
-```
-
-## Documentation
-
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the pipeline, stage by stage.
 - [docs/INSTALL.md](docs/INSTALL.md): installing and running it with Docker.
-- [docs/CLI.md](docs/CLI.md): the command, its options, exit codes and JSON output.
-- [docs/RULES.md](docs/RULES.md): every detection rule, with its log signature, thresholds, severity and usual causes.
-- [docs/WRITING_RULES.md](docs/WRITING_RULES.md): tuning the rules and writing your own, with three worked examples.
-- [docs/SCHEMA.md](docs/SCHEMA.md): every field of the normalized event, with worked examples.
-- [docs/EXPLANATION_RUBRIC.md](docs/EXPLANATION_RUBRIC.md): a one-page sheet for scoring explanations by hand.
-- [eval/results/latest.md](eval/results/latest.md): the latest accuracy results.
-- [generator/README.md](generator/README.md): the test log generator.
+- [docs/CLI.md](docs/CLI.md): every command and option, exit codes, JSON output, live syslog and alerts.
+- [docs/RULES.md](docs/RULES.md) and [docs/WRITING_RULES.md](docs/WRITING_RULES.md): the rules, and how to tune them or write your own.
+- [docs/SCHEMA.md](docs/SCHEMA.md): the normalized event and every line format read.
+- [docs/REAL_LOG_TESTING.md](docs/REAL_LOG_TESTING.md): what happened on real logs.
+- [docs/EXPLANATION_RUBRIC.md](docs/EXPLANATION_RUBRIC.md): scoring explanations by hand.
+- [generator/README.md](generator/README.md): the test log generator and the sample logs.
 
-## Limitations
+## License
 
-- **A root cause is the tool's best reading of the logs, not a verdict.** It is found by applying fixed rules about what can cause what. Each incident states a confidence level and what the logs cannot tell.
-- **Not yet tried against a real AI model at scale.** The validator, the retry and the fallback are tested with stand-in answers, including hostile ones; the stored demo explanations have not been generated yet.
-- **Tested on generated logs only.** The sample logs follow real Cisco IOS and ASA, OpenSSH, ISC dhcpd, BIND, dnsmasq and UFW formats, but they come from this project's own generator, so the results show the tool is consistent with its design, not that it works on every network. Testing on logs from real devices is planned.
-- **Little knowledge of your network.** The tool cannot tell a core uplink from a desk port unless you list what is critical in the settings, so an interface going down is Info on its own. It also cannot know which cable goes where; a small topology file fills that in.
-- **Cisco IOS first.** Other vendors will follow once the pipeline is complete.
-- **Plain syslog has no authentication.** Anyone who can reach the listener's port can send messages that look like they come from your routers. Keep it on a network you trust; see [Live syslog](docs/CLI.md#live-syslog).
-- **Live incidents look back two hours.** An incident longer than that keeps the counts of its first findings, and a topology file is not used for live incidents yet.
-- **Alerts go to chat only.** Slack-compatible and JSON webhooks; no email or paging services, and alert settings are changed in the settings file, not on a screen. Not yet tried against a real Slack workspace.
-- **Single user, no login.** The web app and API are meant for one person's machine. The Docker install publishes them on this computer only by default, without HTTPS.
-- **Live devices on Docker Desktop.** A Cisco device does not name itself in syslog, so it is named by its address; Docker Desktop on Windows and macOS may show every device as one internal address. For live monitoring of several devices, run the Docker install on Linux. See [docs/INSTALL.md](docs/INSTALL.md#send-logs-from-your-devices).
-
-## Tech stack
-
-Backend: Python with FastAPI, pydantic, SQLite, Drain3, pytest and ruff. Frontend: React with Vite, Tailwind and Apache ECharts.
+> **[LICENSE PLACEHOLDER]** Choose a license and add a `LICENSE` file.

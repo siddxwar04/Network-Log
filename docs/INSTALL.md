@@ -94,14 +94,15 @@ The live listener is on by default and listens on port 5514, UDP and TCP, but on
    ```
    logging host 192.168.1.20 transport udp port 5514
    logging trap informational
+   logging origin-id hostname
    service timestamps log datetime msec
    ```
 
-   `logging trap informational` sends everything from severity 6 (informational) up, which includes interface, OSPF, BGP and configuration messages. `service timestamps` makes the device put its own date and time on each message.
+   `logging trap informational` sends everything from severity 6 (informational) up, which includes interface, OSPF, BGP and configuration messages. `logging origin-id hostname` makes the device put its own name in each message. `service timestamps` makes it put its own date and time on each message.
 
 6. Open **Live** in the web interface. The device appears under Senders within seconds of its next message.
 
-A Cisco device does not put its own name in the messages it sends this way, so netlog names each device by the address it sends from. On a **Linux** host that is the device's real address. **Docker Desktop on Windows and macOS** can pass every message on from one internal address instead (such as 192.168.65.1), and then all your devices look like a single device and their incidents run together. Check the Senders list after connecting a second device. If they share one address, run the Docker install on a Linux machine or a Linux virtual machine for live monitoring; uploading log files is not affected.
+With `logging origin-id hostname`, each device is named by the name in its messages. Without it, a Cisco device does not put its own name in the messages it sends this way, and netlog names it by the address it sends from. On a **Linux** host that is the device's real address. **Docker Desktop on Windows and macOS** can pass every message on from one internal address instead (such as 192.168.65.1), and then devices without `logging origin-id hostname` all look like a single device and their incidents run together. Check the Senders list after connecting a second device. If they share one address, add `logging origin-id hostname` to every device, or run the Docker install on a Linux machine or a Linux virtual machine; uploading log files is not affected.
 
 For a Linux server, add a line to rsyslog (for example in `/etc/rsyslog.d/90-netlog.conf`) and restart rsyslog:
 

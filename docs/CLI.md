@@ -340,7 +340,7 @@ To try it without a router, send a sample to it, sped up 20 times, from 02:44 in
 
 ### Pointing a device at it
 
-On a Cisco device: `logging host 192.168.1.20 transport udp port 5514`, where 192.168.1.20 is the computer running netlog. Then set `bind = "192.168.1.20"` under `[live]`, so the listener accepts messages from the network and not only from this computer.
+On a Cisco device: `logging host 192.168.1.20 transport udp port 5514`, where 192.168.1.20 is the computer running netlog, and `logging origin-id hostname` so that each message carries the device's name; without it the device is named by the address it sends from. Then set `bind = "192.168.1.20"` under `[live]`, so the listener accepts messages from the network and not only from this computer.
 
 Port 514 is the standard syslog port. On Linux and macOS a port below 1024 needs administrator rights (run as root, or forward 514 to 5514 in the firewall); on Windows any free port can be used, but the Windows firewall must let the messages in. Devices that cannot change their port can be pointed at 514 with `port = 514`.
 
