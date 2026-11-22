@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Pinpoint">
-  <title>Pinpoint</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CauseLine">
+  <title>CauseLine</title>
   <polygon points="32,8 52.78,20 52.78,44 32,56 11.22,44 11.22,20" fill="none" stroke="#3d4466" stroke-width="10" stroke-linejoin="round"/>
   <polygon points="32,8 52.78,20 52.78,44 32,56 11.22,44 11.22,20" fill="#191c2b" stroke="#191c2b" stroke-width="8" stroke-linejoin="round"/>
   <g stroke="#9aa0b8" stroke-width="3.5" stroke-linecap="round">

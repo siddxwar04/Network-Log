@@ -176,6 +176,7 @@ eval/                evaluation harness, held-out sets, results/
 data/scenarios/      the twelve sample logs with their answer keys
 deploy/              Docker images, Compose file, settings example
 docs/                reference documentation
+brand/               the logo
 ```
 
 ### For development
