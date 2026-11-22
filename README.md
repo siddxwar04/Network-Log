@@ -4,6 +4,8 @@ Reads router, switch, firewall and server logs, finds the incidents in them with
 
 ![Loading the cascade sample log, the dashboard that follows, and the Critical incident with its explanation and evidence](docs/images/hero.gif)
 
+**[Watch the demo video](https://github.com/siddxwar04/Network-Log/releases/download/demo-v1/causeline-highlight.mp4)** · [full walkthrough](https://github.com/siddxwar04/Network-Log/releases/download/demo-v1/causeline-showcase.mp4)
+
 ## The problem
 
 At 2:14 am a cable between two routers goes bad, and within a minute five devices write about 3,000 log lines: interfaces going down, OSPF neighbors lost, BGP sessions dropping. An engineer reading them by hand needs twenty minutes to work out that it was one cable. Large teams have a SIEM for this; small IT teams, college labs and homelabs usually have `grep`.
