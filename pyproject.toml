@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "netlog"
 version = "0.1.0"
-description = "Network log summarizer and incident explainer"
+description = "CauseLine: from network logs to root cause, with the lines that prove it"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

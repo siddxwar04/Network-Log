@@ -2,7 +2,7 @@
 
 One command starts everything: the API, the live syslog listener and the web interface. Nothing else needs installing, no Python and no Node.js. With no settings changed and no API key it starts in demo mode, with the built-in scenarios ready to load.
 
-To run netlog without Docker, for development, see the README instead.
+The app is called CauseLine; its command, its package and its settings are named `netlog`, which is the name this page uses. To run netlog without Docker, for development, see the README instead.
 
 ## Requirements
 
@@ -58,6 +58,12 @@ Any setting in `backend/netlog/config/defaults.toml` can be put in `.env` too, a
 
 ```
 NETLOG__CORRELATION__GAP_SECONDS=90
+```
+
+Or `replay_step_seconds` under `[api]`, how long the incident replay in the web interface stays on each step when it plays by itself (4 seconds by default):
+
+```
+NETLOG__API__REPLAY_STEP_SECONDS=6
 ```
 
 A name that is not a setting, or a value of the wrong kind (text where a number belongs), stops the app at start with a message saying which line is wrong. Read it with `docker compose logs backend`.

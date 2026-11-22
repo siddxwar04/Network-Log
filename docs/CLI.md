@@ -1,6 +1,6 @@
 # Command Line
 
-One command analyzes a log file and prints a report. It runs fully offline unless you set up an LLM provider, which is optional and only ever writes the explanations.
+`netlog` is CauseLine's command. One command analyzes a log file and prints a report. It runs fully offline unless you set up an LLM provider, which is optional and only ever writes the explanations.
 
 ```powershell
 netlog analyze <file>

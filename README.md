@@ -2,7 +2,7 @@
 
 Reads router, switch, firewall and server logs, finds the incidents in them with deterministic rules, and explains each one in plain English, with every statement linked to the log lines that prove it.
 
-> **[GIF PLACEHOLDER: hero.gif]** Capture: drop `data/scenarios/02_cascade.log` on the upload page, the stepper runs to the dashboard, open the Critical incident, click a citation such as `[2260]` and show the log line it scrolls to. About 15 seconds.
+![Loading the cascade sample log, the dashboard that follows, and the Critical incident with its explanation and evidence](docs/images/hero.gif)
 
 ## The problem
 
@@ -13,7 +13,8 @@ At 2:14 am a cable between two routers goes bad, and within a minute five device
 - **Finds incidents with rules, not guesswork.** 16 rules for link flaps, failed links, BGP and OSPF drops, DHCP exhaustion, brute-force logins, port scans, DNS failures and more, each with a severity and the reason for it.
 - **Turns many alerts into one incident with a root cause.** Twelve findings on four routers become one incident: R1's interface went down, and everything else followed, with a confidence and what the logs cannot tell.
 - **Explains it in plain English, with citations.** A summary, a timeline, what to check and the read-only commands that confirm it, each statement ending in line numbers you can click.
-- **Works with the AI switched off.** An LLM can write the explanation, but only from evidence the rules already found, and its answer is checked before it is shown. Without one, built-in explanations are used.
+- **Replays an incident step by step.** In the web interface, Replay walks through the explanation one sentence at a time, marking the device in the causal chain, the moment on the timeline and the log lines each step rests on.
+- **Works with the AI switched off.** An LLM can write the explanation, but only from evidence the rules already found, and its answer is checked before it is shown. Without one, built-in explanations are used; the demo scenarios show explanations an LLM wrote once, stored with them and checked again each time they are shown.
 - **Runs on files or live.** Upload a file, run one command on it, or point your devices at it and get a chat alert when something serious starts.
 
 ## Try it
@@ -26,9 +27,7 @@ cd Network-Log/deploy
 docker compose up -d --build
 ```
 
-Then open http://localhost:8080 and pick a demo scenario. It runs in demo mode until you add an LLM key. [docs/INSTALL.md](docs/INSTALL.md) covers settings, keys, live devices, backups and upgrades.
-
-> **[LINK PLACEHOLDER: live demo]** Add the address of a hosted demo here, or remove this line.
+Then open http://localhost:8080 and pick a demo scenario. It runs in demo mode until you add an LLM key. The command, the Python package and the settings are all named `netlog`. [docs/INSTALL.md](docs/INSTALL.md) covers settings, keys, live devices, backups and upgrades.
 
 Without Docker, with Python 3.11 or newer (commands for Windows PowerShell; on Linux and macOS use `.venv/bin/`):
 
@@ -121,16 +120,18 @@ A found incident matches an expected one when it is of the same type, its likely
 
 - **The LLM sees an evidence pack, not the log.** A short case file of at most 3,000 tokens: the incident's facts as the rules decided them, its findings and a few representative lines, each with an id. Addresses, hostnames and usernames are replaced by stand-ins before it leaves the machine, and secrets are removed.
 - **Every statement must cite the pack.** The answer is a fixed structure, and each statement names the findings or lines it rests on. The report turns them into line numbers of the original file.
-- **A validator checks the answer.** It is rejected if a citation does not exist, if it names an interface, address, device or time that is not in the pack, if it contradicts the severity or root cause, if it contains links or HTML, or if a step that changes a device is not marked as one. It is asked for once more with the reasons, and then replaced by a built-in explanation, which passes the same checks. Every report says which of the two wrote it.
+- **A validator checks the answer.** It is rejected if a citation does not exist, if it names an interface, address, device or time that is not in the pack, if it contradicts the severity or root cause, if it contains links or HTML, or if a step that changes a device is not marked as one. It is asked for once more with the reasons, and then replaced by a built-in explanation, which passes the same checks. Every report says who wrote it: an LLM, the built-in templates, or an LLM answer stored with a demo scenario.
 - **It is tested against an attack.** Sample log 9 holds a brute-force attack whose usernames are written to talk an LLM into calling it harmless. The rules find it the same way, and an answer that lowers the severity or says nothing happened is rejected.
 
 ## Screenshots
 
-> **[SCREENSHOT PLACEHOLDER: dashboard.png]** Capture: the dashboard of `08_noise_50k.log` or `02_cascade.log`, showing the stat tiles, the events-over-time chart with an incident band, and the incident cards.
+![The dashboard of 02_cascade.log: the verdict first, the incident card, events over time with the incident shaded, and the totals](docs/images/dashboard.jpg)
 
-> **[SCREENSHOT PLACEHOLDER: incident.png]** Capture: the incident page of `02_cascade.log`, with the explanation on one side and the evidence lines on the other, a citation hovered to show its preview.
+![The incident page: the explanation with its citations on the left, the log lines they point to on the right](docs/images/incident.jpg)
 
-> **[SCREENSHOT PLACEHOLDER: timeline.png]** Capture: the timeline and causal chain of the same incident, R1 on top, the OSPF and BGP markers on R2 to R4 following it.
+![The causal chain with R1's interface as the root cause, and the timeline of every event by device](docs/images/timeline.jpg)
+
+![Replay on step 2 of 3: the step track at the bottom, and the log lines that step cites marked in the evidence](docs/images/replay.jpg)
 
 ## Using it for real
 
@@ -212,4 +213,4 @@ Then open http://localhost:5173. `npm test` runs the frontend's tests.
 
 ## License
 
-> **[LICENSE PLACEHOLDER]** Choose a license and add a `LICENSE` file.
+MIT. See [LICENSE](LICENSE).

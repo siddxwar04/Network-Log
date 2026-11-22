@@ -1,6 +1,6 @@
 # Writing Rules
 
-netlog finds problems with detection rules: "five link failures on one interface within five minutes is a link flap". The built-in rules are described in [RULES.md](RULES.md). Every network is different, so you can tune them and add your own in a rule file, without programming and without editing the built-in file.
+netlog, the command behind CauseLine, finds problems with detection rules: "five link failures on one interface within five minutes is a link flap". The built-in rules are described in [RULES.md](RULES.md). Every network is different, so you can tune them and add your own in a rule file, without programming and without editing the built-in file.
 
 A rule file is plain data in [TOML](https://toml.io). It can never run code or commands, and it cannot read other files. A file with a mistake is refused with a message that names the rule, the setting and the problem; netlog never runs with a rule silently ignored.
 
